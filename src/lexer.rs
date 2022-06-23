@@ -1,4 +1,3 @@
-/// Internal representation of source code
 #[derive(Debug)]
 pub enum Token {
     IntLiteral(i32),
@@ -8,14 +7,15 @@ pub enum Token {
     Equals,
 }
 
+/// Internal representation of source code
 #[derive(Debug)]
 pub struct Tokens {
     tokens: Vec<Token>,
 }
 
 impl Tokens {
-    fn new() -> Tokens {
-        Tokens { tokens: Vec::new() }
+    fn new() -> Self {
+        Self { tokens: Vec::new() }
     }
 
     fn push(&mut self, t: Token) {
@@ -35,8 +35,8 @@ struct SourceCodeReader<'a> {
 }
 
 impl<'a> SourceCodeReader<'a> {
-    fn new(src: &str) -> SourceCodeReader {
-        SourceCodeReader {
+    fn new(src: &'a str) -> Self {
+        Self {
             src: src.as_bytes(),
             len: src.len(),
             cur: 0,
@@ -70,8 +70,8 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(src: &str) -> Lexer {
-        Lexer {
+    pub fn new(src: &'a str) -> Self {
+        Self {
             token: String::from(""),
             reader: SourceCodeReader::new(src),
             tokens: Tokens::new(),
