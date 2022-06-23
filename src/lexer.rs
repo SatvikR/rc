@@ -21,10 +21,14 @@ impl Tokens {
     fn push(&mut self, t: Token) {
         self.tokens.push(t);
     }
+
+    pub fn get_tokens<'a>(&'a self) -> &'a [Token] {
+        self.tokens.as_slice()
+    }
 }
 
 #[derive(Debug)]
-pub struct SyntaxError {
+pub struct ScanningError {
     pub err_message: String,
 }
 
@@ -89,7 +93,7 @@ impl<'a> Lexer<'a> {
         '0' <= c && c <= '9'
     }
 
-    fn handle_integer_literal(&mut self) -> Result<Token, SyntaxError> {
+    fn handle_integer_literal(&mut self) -> Result<Token, ScanningError> {
         // TODO for floating points. This really should be its own
         // read function since it handles things like . differently
         match self.read_word() {
@@ -100,14 +104,14 @@ impl<'a> Lexer<'a> {
         match self.token.parse::<i32>() {
             Ok(n) => return Ok(Token::IntLiteral(n)),
             Err(_) => {
-                return Err(SyntaxError {
+                return Err(ScanningError {
                     err_message: format!("error reading int literal: {}", self.token,),
                 })
             }
         }
     }
 
-    fn handle_literal(&mut self) -> Option<Result<Token, SyntaxError>> {
+    fn handle_literal(&mut self) -> Option<Result<Token, ScanningError>> {
         // is the token the beginning of a literal
         if Lexer::is_ascii_numeric(self.token.as_bytes()[0] as char) {
             return Some(self.handle_integer_literal());
@@ -138,7 +142,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_word(&mut self) -> Result<(), SyntaxError> {
+    fn read_word(&mut self) -> Result<(), ScanningError> {
         loop {
             match self.reader.peek() {
                 Some(c) => {
@@ -148,7 +152,7 @@ impl<'a> Lexer<'a> {
                     self.token.push(self.reader.next().unwrap());
                 }
                 None => {
-                    return Err(SyntaxError {
+                    return Err(ScanningError {
                         err_message: format!("invalid token {}", self.token),
                     })
                 }
@@ -157,7 +161,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Performs lexical analysis on the source code
-    pub fn lex(&mut self) -> Result<&Tokens, SyntaxError> {
+    pub fn lex(&mut self) -> Result<&Tokens, ScanningError> {
         while !self.reader.is_empty() {
             self.token = String::from("");
             match self.reader.next() {
@@ -200,7 +204,7 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
                 None => {
-                    return Err(SyntaxError {
+                    return Err(ScanningError {
                         err_message: format!("invalid token: {}", self.token),
                     })
                 }
