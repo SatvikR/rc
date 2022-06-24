@@ -1,1 +1,6 @@
 /target
+
+# temporary
+prog.asm
+prog.o
+prog
