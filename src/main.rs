@@ -9,7 +9,7 @@ use parser::Parser;
 use crate::codegen::generate_x86_64;
 
 fn main() {
-    let mut lexer = Lexer::new("i32 x = 10;");
+    let mut lexer = Lexer::new("i32 x = 10;i32 y = 1000;");
     let tokens = match lexer.lex() {
         Ok(t) => t,
         Err(e) => {

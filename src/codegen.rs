@@ -113,6 +113,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
                     );
 
                     self.ctx.curr_fn.as_mut().unwrap().stack_size += 1;
+                    let stack_size = self.ctx.curr_fn.as_mut().unwrap().stack_size;
                     self.ctx
                         .curr_fn
                         .as_mut()
@@ -123,7 +124,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
                             ident.to_string(),
                             IRSymbol {
                                 typ: Type::I32,
-                                offset: 1,
+                                offset: stack_size,
                             },
                         );
 
