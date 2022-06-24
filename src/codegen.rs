@@ -60,6 +60,14 @@ impl IRGenCtx {
             out: IRProgram { ops: Vec::new() },
         }
     }
+
+    fn get_curr_fn(&mut self) -> &mut IRFn {
+        return self.curr_fn.as_mut().unwrap();
+    }
+
+    fn get_curr_frame(&mut self) -> &mut IRFrame {
+        return self.get_curr_fn().curr_frame();
+    }
 }
 
 // Generates IR from an AST
@@ -83,7 +91,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
             prep_loc: self.ctx.out.ops.len() - 1,
             stack_size: 0,
         });
-        self.ctx.curr_fn.as_mut().unwrap().frames.push(IRFrame {
+        self.ctx.get_curr_fn().frames.push(IRFrame {
             symbols: HashMap::new(),
         });
     }
@@ -91,10 +99,11 @@ impl<'a, 'b> IRGen<'a, 'b> {
     fn end_function(&mut self) {
         self.ctx.out.ops.push(Op::EndFn);
 
-        match self.ctx.out.ops[self.ctx.curr_fn.as_mut().unwrap().prep_loc] {
+        let prep_loc = self.ctx.get_curr_fn().prep_loc;
+
+        match self.ctx.out.ops[prep_loc] {
             Op::PrepFn(_) => {
-                self.ctx.out.ops[self.ctx.curr_fn.as_mut().unwrap().prep_loc] =
-                    Op::PrepFn(self.ctx.curr_fn.as_mut().unwrap().stack_size)
+                self.ctx.out.ops[prep_loc] = Op::PrepFn(self.ctx.get_curr_fn().stack_size);
             }
             _ => panic!("Compiler Error: PrepFn Op was expected but not obtained"),
         }
@@ -112,38 +121,28 @@ impl<'a, 'b> IRGen<'a, 'b> {
                         "cannot perform variable decl outside of function"
                     );
 
-                    self.ctx.curr_fn.as_mut().unwrap().stack_size += 1;
-                    let stack_size = self.ctx.curr_fn.as_mut().unwrap().stack_size;
-                    self.ctx
-                        .curr_fn
-                        .as_mut()
-                        .unwrap()
-                        .curr_frame()
-                        .symbols
-                        .insert(
-                            ident.to_string(),
-                            IRSymbol {
-                                typ: Type::I32,
-                                offset: stack_size,
-                            },
-                        );
+                    self.ctx.get_curr_fn().stack_size += 1;
+                    let stack_size = self.ctx.get_curr_fn().stack_size;
+                    self.ctx.get_curr_frame().symbols.insert(
+                        ident.to_string(),
+                        IRSymbol {
+                            typ: Type::I32,
+                            offset: stack_size,
+                        },
+                    );
 
                     match typ {
-                        Type::I32 => self.ctx.out.ops.push(Op::MovI32 {
-                            offset: self
-                                .ctx
-                                .curr_fn
-                                .as_mut()
-                                .unwrap()
-                                .curr_frame()
-                                .symbols
-                                .get(ident)
-                                .unwrap()
-                                .offset,
-                            val: match expr {
-                                Expr::IntLiteral(n) => *n,
-                            },
-                        }),
+                        Type::I32 => {
+                            let offset =
+                                self.ctx.get_curr_frame().symbols.get(ident).unwrap().offset;
+
+                            self.ctx.out.ops.push(Op::MovI32 {
+                                offset: offset,
+                                val: match expr {
+                                    Expr::IntLiteral(n) => *n,
+                                },
+                            })
+                        }
                     }
                 }
             }
