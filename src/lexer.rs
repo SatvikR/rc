@@ -32,26 +32,42 @@ pub struct ScanningError {
     pub err_message: String,
 }
 
+pub struct SourceFile<'a> {
+    path: String,
+    data: &'a [u8],
+}
+
+impl<'a> SourceFile<'a> {
+    pub fn new(path: String, data: &'a [u8]) -> Self {
+        Self {
+            path: path,
+            data: data,
+        }
+    }
+}
+
 struct SourceCodeReader<'a> {
-    src: &'a [u8],
+    src: SourceFile<'a>,
     cur: usize,
     len: usize,
 }
 
 impl<'a> SourceCodeReader<'a> {
-    fn new(src: &'a str) -> Self {
-        Self {
-            src: src.as_bytes(),
-            len: src.len(),
+    fn new(src_f: SourceFile<'a>) -> Self {
+        let src_len = src_f.data.len();
+
+        return Self {
+            src: src_f,
+            len: src_len,
             cur: 0,
-        }
+        };
     }
 
     fn peek(&self) -> Option<char> {
         if self.cur == self.len {
             return None;
         }
-        Some(self.src[self.cur] as char)
+        Some(self.src.data[self.cur] as char)
     }
 
     fn next(&mut self) -> Option<char> {
@@ -59,7 +75,7 @@ impl<'a> SourceCodeReader<'a> {
             return None;
         }
         self.cur += 1;
-        Some(self.src[self.cur - 1] as char)
+        Some(self.src.data[self.cur - 1] as char)
     }
 
     fn is_empty(&self) -> bool {
@@ -67,18 +83,26 @@ impl<'a> SourceCodeReader<'a> {
     }
 }
 
+pub struct Loc {
+    file: String,
+    line: usize,
+    col: usize,
+}
+
 pub struct Lexer<'a> {
     token: String,
     reader: SourceCodeReader<'a>,
     tokens: Tokens,
+    curr_token_loc: Option<Loc>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(src: &'a str) -> Self {
+    pub fn new(src: SourceFile<'a>) -> Self {
         Self {
             token: String::from(""),
             reader: SourceCodeReader::new(src),
             tokens: Tokens::new(),
+            curr_token_loc: None,
         }
     }
 

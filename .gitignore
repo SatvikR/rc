@@ -1,6 +1,7 @@
 /target
 
-# temporary
+# testing files
 prog.asm
 prog.o
+prog.rc
 prog
