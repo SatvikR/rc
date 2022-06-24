@@ -1,9 +1,12 @@
+mod codegen;
 mod lexer;
 mod parser;
 use std::process::exit;
 
 use lexer::Lexer;
 use parser::Parser;
+
+use crate::codegen::generate_x86_64;
 
 fn main() {
     let mut lexer = Lexer::new("i32 x = 10;");
@@ -16,7 +19,7 @@ fn main() {
     };
 
     let mut parser = Parser::new(tokens);
-    let tree = match parser.parse() {
+    let parsed_program = match parser.parse() {
         Ok(tree) => tree,
         Err(e) => {
             println!("{:?}", e.err_message);
@@ -24,5 +27,6 @@ fn main() {
         }
     };
 
-    println!("{:?}", tree);
+    println!("{:?}", parsed_program);
+    generate_x86_64(parsed_program).unwrap();
 }

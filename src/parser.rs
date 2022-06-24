@@ -63,7 +63,7 @@ impl<'a> TokenReader<'a> {
 /// Program AST
 #[derive(Debug)]
 pub struct ProgramTree {
-    stmts: Vec<Stmt>,
+    pub stmts: Vec<Stmt>,
 }
 
 /// Source code parser
