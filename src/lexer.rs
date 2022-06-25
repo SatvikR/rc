@@ -1,3 +1,5 @@
+use std::{fmt, process::exit};
+
 #[derive(Debug)]
 pub enum Token {
     IntLiteral(i32),
@@ -27,11 +29,6 @@ impl Tokens {
     }
 }
 
-#[derive(Debug)]
-pub struct ScanningError {
-    pub err_message: String,
-}
-
 pub struct SourceFile<'a> {
     path: String,
     data: &'a [u8],
@@ -50,17 +47,32 @@ struct SourceCodeReader<'a> {
     src: SourceFile<'a>,
     cur: usize,
     len: usize,
+    loc: Loc,
 }
 
 impl<'a> SourceCodeReader<'a> {
     fn new(src_f: SourceFile<'a>) -> Self {
         let src_len = src_f.data.len();
+        let src_path = src_f.path.clone();
 
         return Self {
             src: src_f,
             len: src_len,
             cur: 0,
+            loc: Loc {
+                file: src_path,
+                line: 1,
+                col: 1,
+            },
         };
+    }
+
+    fn get_loc(&self) -> Loc {
+        Loc {
+            file: self.loc.file.clone(),
+            line: self.loc.line,
+            col: self.loc.col,
+        }
     }
 
     fn peek(&self) -> Option<char> {
@@ -74,6 +86,13 @@ impl<'a> SourceCodeReader<'a> {
         if self.cur == self.len {
             return None;
         }
+        if self.peek().unwrap() == '\n' {
+            self.loc.line += 1;
+            self.loc.col = 1
+        } else {
+            self.loc.col += 1;
+        }
+
         self.cur += 1;
         Some(self.src.data[self.cur - 1] as char)
     }
@@ -87,6 +106,12 @@ pub struct Loc {
     file: String,
     line: usize,
     col: usize,
+}
+
+impl fmt::Display for Loc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}:{}", self.file, self.line, self.col)
+    }
 }
 
 pub struct Lexer<'a> {
@@ -106,6 +131,12 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn error(&self, error: &str) {
+        let loc = self.curr_token_loc.as_ref().unwrap();
+        eprintln!("[ERR_LEXING] {}: {}", loc, error);
+        exit(1);
+    }
+
     fn is_seperator(token: char) -> bool {
         match token {
             ';' | '=' => true,
@@ -117,25 +148,21 @@ impl<'a> Lexer<'a> {
         '0' <= c && c <= '9'
     }
 
-    fn handle_integer_literal(&mut self) -> Result<Token, ScanningError> {
+    fn handle_integer_literal(&mut self) -> Token {
         // TODO for floating points. This really should be its own
         // read function since it handles things like . differently
-        match self.read_word() {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        }
+        self.read_word();
 
         match self.token.parse::<i32>() {
-            Ok(n) => return Ok(Token::IntLiteral(n)),
+            Ok(n) => return Token::IntLiteral(n),
             Err(_) => {
-                return Err(ScanningError {
-                    err_message: format!("error reading int literal: {}", self.token,),
-                })
+                self.error("error reading int literal");
+                panic!() // unreachable
             }
         }
     }
 
-    fn handle_literal(&mut self) -> Option<Result<Token, ScanningError>> {
+    fn handle_literal(&mut self) -> Option<Token> {
         // is the token the beginning of a literal
         if Lexer::is_ascii_numeric(self.token.as_bytes()[0] as char) {
             return Some(self.handle_integer_literal());
@@ -159,35 +186,36 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn handle_word(&self) -> Option<Token> {
+    fn handle_word(&mut self) -> Option<Token> {
+        self.read_word();
+
         match self.handle_keyword() {
             Some(t) => Some(t),
             None => Some(Token::Identifier(self.token.clone())),
         }
     }
 
-    fn read_word(&mut self) -> Result<(), ScanningError> {
+    fn read_word(&mut self) {
         loop {
             match self.reader.peek() {
                 Some(c) => {
                     if c == ' ' || Lexer::is_seperator(c) {
-                        return Ok(());
+                        return;
                     }
                     self.token.push(self.reader.next().unwrap());
                 }
                 None => {
-                    return Err(ScanningError {
-                        err_message: format!("invalid token {}", self.token),
-                    })
+                    self.error("error reading int literal");
                 }
             }
         }
     }
 
     /// Performs lexical analysis on the source code
-    pub fn lex(&mut self) -> Result<&Tokens, ScanningError> {
+    pub fn lex(&mut self) -> &Tokens {
         while !self.reader.is_empty() {
             self.token = String::from("");
+            self.curr_token_loc = Some(self.reader.get_loc());
             match self.reader.next() {
                 Some(c) => self.token.push(c),
                 None => break,
@@ -197,15 +225,11 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            let x = self.handle_literal();
-            match x {
-                Some(r) => match r {
-                    Ok(t) => {
-                        self.tokens.push(t);
-                        continue;
-                    }
-                    Err(e) => return Err(e),
-                },
+            match self.handle_literal() {
+                Some(t) => {
+                    self.tokens.push(t);
+                    continue;
+                }
                 None => (),
             }
 
@@ -217,23 +241,16 @@ impl<'a> Lexer<'a> {
                 None => (),
             }
 
-            match self.read_word() {
-                Ok(_) => (),
-                Err(e) => return Err(e),
-            }
-
             match self.handle_word() {
                 Some(t) => {
                     self.tokens.push(t);
                     continue;
                 }
                 None => {
-                    return Err(ScanningError {
-                        err_message: format!("invalid token: {}", self.token),
-                    })
+                    self.error("invalid token");
                 }
             }
         }
-        Ok(&self.tokens)
+        &self.tokens
     }
 }

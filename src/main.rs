@@ -39,13 +39,7 @@ fn main() {
     let src_file = SourceFile::new(program_path.to_string(), src_buf);
 
     let mut lexer = Lexer::new(src_file);
-    let tokens = match lexer.lex() {
-        Ok(t) => t,
-        Err(e) => {
-            println!("{:?}", e.err_message);
-            exit(1);
-        }
-    };
+    let tokens = lexer.lex();
 
     let mut parser = Parser::new(tokens);
     let parsed_program = match parser.parse() {
