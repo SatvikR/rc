@@ -1,9 +1,6 @@
-use crate::lexer::{Token, Tokens};
+use std::process::exit;
 
-#[derive(Debug)]
-pub struct SyntaxError {
-    pub err_message: String,
-}
+use crate::lexer::{LexedToken, Loc, Token, Tokens};
 
 #[derive(Debug)]
 pub enum Type {
@@ -25,9 +22,10 @@ pub enum Stmt {
 }
 
 struct TokenReader<'a> {
-    tokens: &'a [Token],
+    tokens: &'a [LexedToken],
     cur: usize,
     len: usize,
+    eof: Loc,
 }
 
 impl<'a> TokenReader<'a> {
@@ -37,17 +35,18 @@ impl<'a> TokenReader<'a> {
             tokens: tokens,
             len: tokens.len(),
             cur: 0,
+            eof: t.get_eof(),
         }
     }
 
-    fn peek(&self) -> Option<&Token> {
+    fn peek(&self) -> Option<&LexedToken> {
         if self.cur == self.len {
             return None;
         }
         Some(&self.tokens[self.cur])
     }
 
-    fn next(&mut self) -> Option<&Token> {
+    fn next(&mut self) -> Option<&LexedToken> {
         if self.cur == self.len {
             return None;
         }
@@ -80,45 +79,44 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_var_decl_stmt(&mut self) -> Result<Stmt, SyntaxError> {
+    fn error(error: &str, loc: &Loc) {
+        eprintln!("[ERR_LEXING] {}: {}", loc, error);
+        exit(1);
+    }
+
+    fn handle_var_decl_stmt(&mut self) -> Stmt {
         // Read in the type
         let type_token = self.reader.next().unwrap();
-        let decl_type = match type_token {
+        let decl_type = match type_token.token {
             Token::I32 => Type::I32,
             _ => panic!("type_token must be a valid type"),
         };
 
         // Read in the identifier
         let ident_token = match self.reader.next() {
-            Some(t) => match t {
+            Some(t) => match &t.token {
                 Token::Identifier(n) => n.clone(),
                 _ => {
-                    return Err(SyntaxError {
-                        err_message: format!("expected identifier"),
-                    })
+                    Self::error("expected identifier", &t.loc);
+                    panic!();
                 }
             },
             None => {
-                return Err(SyntaxError {
-                    err_message: format!("expected identifier"),
-                })
+                Self::error("expected identifier", &self.reader.eof);
+                panic!();
             }
         };
 
         // Read in equals sign
         match self.reader.next() {
-            Some(t) => match t {
+            Some(t) => match t.token {
                 Token::Equals => (),
                 _ => {
-                    return Err(SyntaxError {
-                        err_message: format!("expected ="),
-                    })
+                    Self::error("expected '='", &t.loc);
                 }
             },
             None => {
-                return Err(SyntaxError {
-                    err_message: format!("expected ="),
-                })
+                Self::error("expected identifier", &self.reader.eof);
             }
         }
 
@@ -126,60 +124,54 @@ impl<'a> Parser<'a> {
         // TODO move to seperate function to parse out full
         // non-literal expressions.
         let decl_expr = match self.reader.next() {
-            Some(t) => match t {
+            Some(t) => match t.token {
                 Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
                 _ => {
-                    return Err(SyntaxError {
-                        err_message: format!("expected expression"),
-                    })
+                    Self::error("expected expression", &t.loc);
+                    panic!();
                 }
             },
             None => {
-                return Err(SyntaxError {
-                    err_message: format!("expected expression"),
-                })
+                Self::error("expected expression", &self.reader.eof);
+                panic!();
             }
         };
 
         // Read in semicolon
         match self.reader.next() {
-            Some(t) => match t {
+            Some(t) => match &t.token {
                 Token::Semicolon => (),
                 _ => {
-                    return Err(SyntaxError {
-                        err_message: format!("expected ="),
-                    })
+                    Self::error("expected ';'", &t.loc);
                 }
             },
             None => {
-                return Err(SyntaxError {
-                    err_message: format!("expected ="),
-                })
+                Self::error("expected ';'", &self.reader.eof);
             }
         }
 
-        Ok(Stmt::VarDecl {
+        Stmt::VarDecl {
             typ: decl_type,
             ident: ident_token,
             expr: decl_expr,
-        })
+        }
     }
 
-    pub fn parse(&mut self) -> Result<&ProgramTree, SyntaxError> {
+    pub fn parse(&mut self) -> &ProgramTree {
         while !self.reader.is_empty() {
             let token = match self.reader.peek() {
                 Some(t) => t,
                 None => break,
             };
 
-            match token {
-                Token::I32 => match self.handle_var_decl_stmt() {
-                    Ok(stmt) => self.prog.stmts.push(stmt),
-                    Err(e) => return Err(e),
-                },
+            match token.token {
+                Token::I32 => {
+                    let stmt = self.handle_var_decl_stmt();
+                    self.prog.stmts.push(stmt)
+                }
                 _ => break,
             }
         }
-        Ok(&self.prog)
+        &self.prog
     }
 }

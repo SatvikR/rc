@@ -9,23 +9,37 @@ pub enum Token {
     Equals,
 }
 
+#[derive(Debug)]
+pub struct LexedToken {
+    pub token: Token,
+    pub loc: Loc,
+}
+
 /// Internal representation of source code
 #[derive(Debug)]
 pub struct Tokens {
-    tokens: Vec<Token>,
+    tokens: Vec<LexedToken>,
+    eof: Option<Loc>,
 }
 
 impl Tokens {
     fn new() -> Self {
-        Self { tokens: Vec::new() }
+        Self {
+            tokens: Vec::new(),
+            eof: None,
+        }
     }
 
-    fn push(&mut self, t: Token) {
+    fn push(&mut self, t: LexedToken) {
         self.tokens.push(t);
     }
 
-    pub fn get_tokens<'a>(&'a self) -> &'a [Token] {
+    pub fn get_tokens<'a>(&'a self) -> &'a [LexedToken] {
         self.tokens.as_slice()
+    }
+
+    pub fn get_eof(&self) -> Loc {
+        self.eof.as_ref().unwrap().clone()
     }
 }
 
@@ -102,6 +116,7 @@ impl<'a> SourceCodeReader<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Loc {
     file: String,
     line: usize,
@@ -137,6 +152,13 @@ impl<'a> Lexer<'a> {
         exit(1);
     }
 
+    fn push_token(&mut self, t: Token) {
+        self.tokens.push(LexedToken {
+            token: t,
+            loc: self.curr_token_loc.as_ref().unwrap().clone(),
+        });
+    }
+
     fn is_seperator(token: char) -> bool {
         match token {
             ';' | '=' => true,
@@ -157,7 +179,7 @@ impl<'a> Lexer<'a> {
             Ok(n) => return Token::IntLiteral(n),
             Err(_) => {
                 self.error("error reading int literal");
-                panic!() // unreachable
+                panic!();
             }
         }
     }
@@ -227,7 +249,7 @@ impl<'a> Lexer<'a> {
 
             match self.handle_literal() {
                 Some(t) => {
-                    self.tokens.push(t);
+                    self.push_token(t);
                     continue;
                 }
                 None => (),
@@ -235,7 +257,7 @@ impl<'a> Lexer<'a> {
 
             match self.handle_seperator() {
                 Some(t) => {
-                    self.tokens.push(t);
+                    self.push_token(t);
                     continue;
                 }
                 None => (),
@@ -243,7 +265,7 @@ impl<'a> Lexer<'a> {
 
             match self.handle_word() {
                 Some(t) => {
-                    self.tokens.push(t);
+                    self.push_token(t);
                     continue;
                 }
                 None => {
@@ -251,6 +273,7 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+        self.tokens.eof = Some(self.reader.get_loc());
         &self.tokens
     }
 }
