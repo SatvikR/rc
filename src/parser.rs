@@ -80,7 +80,7 @@ impl<'a> Parser<'a> {
     }
 
     fn error(error: &str, loc: &Loc) {
-        eprintln!("[ERR_LEXING] {}: {}", loc, error);
+        eprintln!("[ERR_PARSING] {}: {}", loc, error);
         exit(1);
     }
 
