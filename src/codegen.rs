@@ -20,6 +20,7 @@ enum Op {
     Add,
     Sub,
     Mult,
+    Div,
     Pop,
     MovI32(i32), // value is the stack offset
     EndFn,
@@ -126,7 +127,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
                     BinOperator::Plus => self.ctx.out.ops.push(Op::Add),
                     BinOperator::Minus => self.ctx.out.ops.push(Op::Sub),
                     BinOperator::Mult => self.ctx.out.ops.push(Op::Mult),
-                    _ => todo!(),
+                    BinOperator::Div => self.ctx.out.ops.push(Op::Div),
                 }
             }
         }
@@ -213,6 +214,13 @@ pub fn generate_x86_64(ast: &ProgramTree) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    pop rcx\n"))?;
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    imul rax, rcx\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Div => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    mov edx, 0\n"))?;
+                out.write_fmt(format_args!("    div rcx\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Pop => {
