@@ -133,22 +133,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Read in the expression
-        // TODO move to seperate function to parse out full
-        // non-literal expressions.
-        // let decl_expr = match self.reader.next() {
-        //     Some(t) => match t.token {
-        //         Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
-        //         _ => {
-        //             Self::error("expected expression", &t.loc);
-        //             panic!();
-        //         }
-        //     },
-        //     None => {
-        //         Self::error("expected expression", &self.reader.eof);
-        //         panic!();
-        //     }
-        // };
         let decl_expr = self.handle_expression();
 
         // Read in semicolon
@@ -178,7 +162,7 @@ impl<'a> Parser<'a> {
         // An operator is what gets turned into the actual AST node, the literals
         // are the contents of the terms.
 
-        let exp_one = match self.reader.next() {
+        let mut exp = match self.reader.next() {
             Some(t) => match &t.token {
                 Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
                 _ => {
@@ -192,26 +176,39 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let exp_bin_op = match self.reader.peek() {
-            Some(t) => match &t.token {
-                Token::Plus => BinOperator::Plus,
-                Token::Minus => BinOperator::Minus,
-                Token::Mult => BinOperator::Mult,
-                Token::Div => BinOperator::Div,
-                _ => return exp_one,
-            },
-            None => return exp_one,
-        };
+        loop {
+            let exp_bin_op = match self.reader.peek() {
+                Some(t) => match &t.token {
+                    Token::Plus => BinOperator::Plus,
+                    Token::Minus => BinOperator::Minus,
+                    Token::Mult => BinOperator::Mult,
+                    Token::Div => BinOperator::Div,
+                    _ => return exp,
+                },
+                None => return exp,
+            };
 
-        self.reader.next(); // skip next token since we know its a binary operator
+            self.reader.next();
 
-        let exp_two = self.handle_expression();
-
-        return Expr::BinOp {
-            op: exp_bin_op,
-            e1: Box::new(exp_one),
-            e2: Box::new(exp_two),
-        };
+            let exp_two = match self.reader.next() {
+                Some(t) => match &t.token {
+                    Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
+                    _ => {
+                        Self::error("expected expression", &t.loc);
+                        panic!();
+                    }
+                },
+                None => {
+                    Self::error("expected expression", &self.reader.eof);
+                    panic!();
+                }
+            };
+            exp = Expr::BinOp {
+                op: exp_bin_op,
+                e1: Box::new(exp),
+                e2: Box::new(exp_two),
+            };
+        }
     }
 
     pub fn parse(&mut self) -> &ProgramTree {
