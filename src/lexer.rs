@@ -7,6 +7,10 @@ pub enum Token {
     I32,
     Semicolon,
     Equals,
+    Plus,
+    Minus,
+    Mult,
+    Div,
 }
 
 #[derive(Debug)]
@@ -166,6 +170,13 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn is_operator(token: char) -> bool {
+        match token {
+            '+' | '-' | '*' | '/' => true,
+            _ => false,
+        }
+    }
+
     fn is_ascii_numeric(c: char) -> bool {
         '0' <= c && c <= '9'
     }
@@ -193,10 +204,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Return a token if the source string is a seperator.
-    fn handle_seperator(&self) -> Option<Token> {
+    fn handle_single_char(&self) -> Option<Token> {
         match self.token.as_str() {
             ";" => Some(Token::Semicolon),
             "=" => Some(Token::Equals),
+            "+" => Some(Token::Plus),
+            "-" => Some(Token::Minus),
+            "*" => Some(Token::Mult),
+            "/" => Some(Token::Div),
             _ => None,
         }
     }
@@ -221,7 +236,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.reader.peek() {
                 Some(c) => {
-                    if c == ' ' || Lexer::is_seperator(c) {
+                    if c == ' ' || Lexer::is_seperator(c) || Lexer::is_operator(c) {
                         return;
                     }
                     self.token.push(self.reader.next().unwrap());
@@ -247,7 +262,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            match self.handle_literal() {
+            match self.handle_single_char() {
                 Some(t) => {
                     self.push_token(t);
                     continue;
@@ -255,7 +270,7 @@ impl<'a> Lexer<'a> {
                 None => (),
             }
 
-            match self.handle_seperator() {
+            match self.handle_literal() {
                 Some(t) => {
                     self.push_token(t);
                     continue;

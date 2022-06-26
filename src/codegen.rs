@@ -4,7 +4,7 @@
 
 use std::{collections::HashMap, fs::File, io::Write};
 
-use crate::parser::{Expr, ProgramTree, Stmt, Type};
+use crate::parser::{BinOperator, Expr, ProgramTree, Stmt, Type};
 
 #[derive(Debug)]
 pub struct CompilerError {
@@ -16,7 +16,10 @@ pub struct CompilerError {
 enum Op {
     DefFn(String),
     PrepFn(i32),
-    MovI32 { offset: i32, val: i32 },
+    Push(i32),
+    Add,
+    Pop,
+    MovI32(i32), // value is the stack offset
     EndFn,
 }
 
@@ -111,6 +114,20 @@ impl<'a, 'b> IRGen<'a, 'b> {
         self.ctx.curr_fn = None;
     }
 
+    fn gen_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push(*n)),
+            Expr::BinOp { op, e1, e2 } => {
+                self.gen_expr(e1);
+                self.gen_expr(e2);
+                match op {
+                    BinOperator::Plus => self.ctx.out.ops.push(Op::Add),
+                    _ => todo!(),
+                }
+            }
+        }
+    }
+
     fn gen(&mut self) -> &IRProgram {
         self.introduce_function("main");
         for stmt in self.ast.stmts.iter() {
@@ -136,12 +153,9 @@ impl<'a, 'b> IRGen<'a, 'b> {
                             let offset =
                                 self.ctx.get_curr_frame().symbols.get(ident).unwrap().offset;
 
-                            self.ctx.out.ops.push(Op::MovI32 {
-                                offset: offset,
-                                val: match expr {
-                                    Expr::IntLiteral(n) => *n,
-                                },
-                            })
+                            self.gen_expr(expr);
+                            self.ctx.out.ops.push(Op::Pop);
+                            self.ctx.out.ops.push(Op::MovI32(offset));
                         }
                     }
                 }
@@ -175,8 +189,21 @@ pub fn generate_x86_64(ast: &ProgramTree) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    mov rbp, rsp\n"))?;
                 out.write_fmt(format_args!("    sub rsp, {}\n", i * 8))?;
             }
-            Op::MovI32 { offset: i, val: n } => {
-                out.write_fmt(format_args!("    mov DWORD [rbp-{}], {}\n", i * 8, n))?
+            Op::Push(n) => {
+                out.write_fmt(format_args!("    mov eax, {}\n", n))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Add => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    add rax, rcx\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Pop => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+            }
+            Op::MovI32(i) => {
+                out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i * 8))?;
             }
             Op::EndFn => {
                 out.write_fmt(format_args!("    mov rsp, rbp\n"))?;

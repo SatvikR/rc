@@ -8,8 +8,21 @@ pub enum Type {
 }
 
 #[derive(Debug)]
+pub enum BinOperator {
+    Plus,
+    Minus,
+    Mult,
+    Div,
+}
+
+#[derive(Debug)]
 pub enum Expr {
     IntLiteral(i32),
+    BinOp {
+        op: BinOperator,
+        e1: Box<Expr>,
+        e2: Box<Expr>,
+    },
 }
 
 #[derive(Debug)]
@@ -123,19 +136,20 @@ impl<'a> Parser<'a> {
         // Read in the expression
         // TODO move to seperate function to parse out full
         // non-literal expressions.
-        let decl_expr = match self.reader.next() {
-            Some(t) => match t.token {
-                Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
-                _ => {
-                    Self::error("expected expression", &t.loc);
-                    panic!();
-                }
-            },
-            None => {
-                Self::error("expected expression", &self.reader.eof);
-                panic!();
-            }
-        };
+        // let decl_expr = match self.reader.next() {
+        //     Some(t) => match t.token {
+        //         Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
+        //         _ => {
+        //             Self::error("expected expression", &t.loc);
+        //             panic!();
+        //         }
+        //     },
+        //     None => {
+        //         Self::error("expected expression", &self.reader.eof);
+        //         panic!();
+        //     }
+        // };
+        let decl_expr = self.handle_expression();
 
         // Read in semicolon
         match self.reader.next() {
@@ -155,6 +169,49 @@ impl<'a> Parser<'a> {
             ident: ident_token,
             expr: decl_expr,
         }
+    }
+
+    fn handle_expression(&mut self) -> Expr {
+        // Actual "terms" of expressions can be expressions themselves
+        // for example: 10 + 10 + 10, is really 2 expressions,
+        // as in 10 + (10 + 10) which would be parsed to add(10, add(10, 10))
+        // An operator is what gets turned into the actual AST node, the literals
+        // are the contents of the terms.
+
+        let exp_one = match self.reader.next() {
+            Some(t) => match &t.token {
+                Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
+                _ => {
+                    Self::error("expected expression", &t.loc);
+                    panic!();
+                }
+            },
+            None => {
+                Self::error("expected expression", &self.reader.eof);
+                panic!();
+            }
+        };
+
+        let exp_bin_op = match self.reader.peek() {
+            Some(t) => match &t.token {
+                Token::Plus => BinOperator::Plus,
+                Token::Minus => BinOperator::Minus,
+                Token::Mult => BinOperator::Mult,
+                Token::Div => BinOperator::Div,
+                _ => return exp_one,
+            },
+            None => return exp_one,
+        };
+
+        self.reader.next(); // skip next token since we know its a binary operator
+
+        let exp_two = self.handle_expression();
+
+        return Expr::BinOp {
+            op: exp_bin_op,
+            e1: Box::new(exp_one),
+            e2: Box::new(exp_two),
+        };
     }
 
     pub fn parse(&mut self) -> &ProgramTree {

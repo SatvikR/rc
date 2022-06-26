@@ -3,10 +3,11 @@ mod lexer;
 mod parser;
 use std::{env, fs::File, io::Read, process::exit};
 
+use codegen::generate_x86_64;
 use lexer::Lexer;
 use parser::Parser;
 
-use crate::{codegen::generate_x86_64, lexer::SourceFile};
+use crate::lexer::SourceFile;
 
 fn load_src_file(path: &String) -> String {
     let mut src_f = match File::open(path) {
