@@ -2,7 +2,11 @@
 // 1. Convert AST to list of operations (Op for short)
 // 2. Convert List of Op's to assembly output
 
-use std::{collections::HashMap, fs::File, io::Write};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufWriter, Write},
+};
 
 use crate::parser::{BinOperator, Expr, ProgramTree, Stmt, Type};
 
@@ -17,13 +21,15 @@ enum Op {
     DefFn(String),
     PrepFn(i32),
     Push(i32),
+    Pop,
+    MovI32(i32), // value is the stack offset
+    EndFn,
     Add,
     Sub,
     Mult,
     Div,
-    Pop,
-    MovI32(i32), // value is the stack offset
-    EndFn,
+    Gt,
+    Lt,
 }
 
 #[derive(Debug)]
@@ -128,6 +134,8 @@ impl<'a, 'b> IRGen<'a, 'b> {
                     BinOperator::Minus => self.ctx.out.ops.push(Op::Sub),
                     BinOperator::Mult => self.ctx.out.ops.push(Op::Mult),
                     BinOperator::Div => self.ctx.out.ops.push(Op::Div),
+                    BinOperator::GreaterThan => self.ctx.out.ops.push(Op::Gt),
+                    BinOperator::LessThan => self.ctx.out.ops.push(Op::Lt),
                 }
             }
         }
@@ -175,7 +183,8 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     let mut ir_gen = IRGen::new(ast, &mut ctx);
     let program = ir_gen.gen();
 
-    let mut out = File::create(path)?;
+    let f = File::create(path)?;
+    let mut out = BufWriter::new(f);
 
     out.write_all(b"section .text\n")?;
     out.write_all(b"    global _start\n")?;
@@ -196,6 +205,17 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::Push(n) => {
                 out.write_fmt(format_args!("    mov eax, {}\n", n))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Pop => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+            }
+            Op::MovI32(i) => {
+                out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
+            }
+            Op::EndFn => {
+                out.write_fmt(format_args!("    mov rsp, rbp\n"))?;
+                out.write_fmt(format_args!("    pop rbp\n"))?;
+                out.write_fmt(format_args!("    ret\n"))?;
             }
             Op::Add => {
                 out.write_fmt(format_args!("    pop rcx\n"))?;
@@ -222,16 +242,23 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    div rcx\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
-            Op::Pop => {
+            Op::Gt => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
                 out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    cmp rax, rcx\n"))?;
+                out.write_fmt(format_args!("    setg al\n"))?;
+                out.write_fmt(format_args!("    and al, 1\n"))?;
+                out.write_fmt(format_args!("    movzx rax, al\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
             }
-            Op::MovI32(i) => {
-                out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
-            }
-            Op::EndFn => {
-                out.write_fmt(format_args!("    mov rsp, rbp\n"))?;
-                out.write_fmt(format_args!("    pop rbp\n"))?;
-                out.write_fmt(format_args!("    ret\n"))?;
+            Op::Lt => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    cmp rax, rcx\n"))?;
+                out.write_fmt(format_args!("    setl al\n"))?;
+                out.write_fmt(format_args!("    and al, 1\n"))?;
+                out.write_fmt(format_args!("    movzx rax, al\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
             }
         }
     }

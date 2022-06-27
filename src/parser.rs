@@ -13,6 +13,8 @@ pub enum BinOperator {
     Minus,
     Mult,
     Div,
+    GreaterThan,
+    LessThan,
 }
 
 #[derive(Debug)]
@@ -183,6 +185,8 @@ impl<'a> Parser<'a> {
                     Token::Minus => BinOperator::Minus,
                     Token::Mult => BinOperator::Mult,
                     Token::Div => BinOperator::Div,
+                    Token::GreaterThan => BinOperator::GreaterThan,
+                    Token::LessThan => BinOperator::LessThan,
                     _ => return exp,
                 },
                 None => return exp,

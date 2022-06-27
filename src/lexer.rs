@@ -11,6 +11,8 @@ pub enum Token {
     Minus,
     Mult,
     Div,
+    GreaterThan,
+    LessThan,
 }
 
 #[derive(Debug)]
@@ -217,6 +219,8 @@ impl<'a> Lexer<'a> {
             "-" => Some(Token::Minus),
             "*" => Some(Token::Mult),
             "/" => Some(Token::Div),
+            ">" => Some(Token::GreaterThan),
+            "<" => Some(Token::LessThan),
             _ => None,
         }
     }
