@@ -15,6 +15,7 @@ pub enum BinOperator {
     Div,
     GreaterThan,
     LessThan,
+    LogicalAnd,
 }
 
 #[derive(Debug)]
@@ -179,6 +180,22 @@ impl<'a> Parser<'a> {
         };
 
         loop {
+            // Handle logical operators differently, since they are not chained in the same way
+            match self.reader.peek() {
+                Some(t) => match &t.token {
+                    Token::LogicalAnd => {
+                        self.reader.next();
+                        return Expr::BinOp {
+                            op: BinOperator::LogicalAnd,
+                            e1: Box::new(exp),
+                            e2: Box::new(self.handle_expression()),
+                        };
+                    }
+                    _ => (),
+                },
+                None => (),
+            }
+
             let exp_bin_op = match self.reader.peek() {
                 Some(t) => match &t.token {
                     Token::Plus => BinOperator::Plus,
@@ -227,7 +244,7 @@ impl<'a> Parser<'a> {
                     let stmt = self.handle_var_decl_stmt();
                     self.prog.stmts.push(stmt)
                 }
-                _ => break,
+                _ => Self::error("expected expression", &token.loc),
             }
         }
         &self.prog

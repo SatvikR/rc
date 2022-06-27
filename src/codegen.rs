@@ -30,6 +30,9 @@ enum Op {
     Div,
     Gt,
     Lt,
+    JmpZero(String),
+    Jmp(String),
+    Lbl(String),
 }
 
 #[derive(Debug)]
@@ -63,6 +66,7 @@ impl IRFn {
 struct IRGenCtx {
     curr_fn: Option<IRFn>,
     out: IRProgram,
+    label: usize,
 }
 
 impl IRGenCtx {
@@ -70,6 +74,7 @@ impl IRGenCtx {
         Self {
             curr_fn: None,
             out: IRProgram { ops: Vec::new() },
+            label: 0,
         }
     }
 
@@ -79,6 +84,11 @@ impl IRGenCtx {
 
     fn get_curr_frame(&mut self) -> &mut IRFrame {
         return self.get_curr_fn().curr_frame();
+    }
+
+    fn get_next_label(&mut self) -> String {
+        self.label += 1;
+        return String::from(format!(".L{}", self.label - 1));
     }
 }
 
@@ -127,6 +137,30 @@ impl<'a, 'b> IRGen<'a, 'b> {
         match expr {
             Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push(*n)),
             Expr::BinOp { op, e1, e2 } => {
+                // handle logical operators differently
+                match op {
+                    BinOperator::LogicalAnd => {
+                        let lbl_false = self.ctx.get_next_label();
+                        let lbl_out = self.ctx.get_next_label();
+
+                        self.gen_expr(e1);
+                        self.ctx.out.ops.push(Op::JmpZero(lbl_false.clone()));
+
+                        self.gen_expr(e2);
+                        self.ctx.out.ops.push(Op::JmpZero(lbl_false.clone()));
+
+                        self.ctx.out.ops.push(Op::Push(1));
+                        self.ctx.out.ops.push(Op::Jmp(lbl_out.clone()));
+
+                        self.ctx.out.ops.push(Op::Lbl(lbl_false.clone()));
+                        self.ctx.out.ops.push(Op::Push(0));
+
+                        self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
+                        return;
+                    }
+                    _ => (),
+                }
+
                 self.gen_expr(e1);
                 self.gen_expr(e2);
                 match op {
@@ -136,6 +170,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
                     BinOperator::Div => self.ctx.out.ops.push(Op::Div),
                     BinOperator::GreaterThan => self.ctx.out.ops.push(Op::Gt),
                     BinOperator::LessThan => self.ctx.out.ops.push(Op::Lt),
+                    _ => panic!(),
                 }
             }
         }
@@ -190,13 +225,16 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     out.write_all(b"    global _start\n")?;
     out.write_all(b"_start:\n")?;
     out.write_all(b"    call main\n")?;
+    out.write_all(b".debug_break:\n")?;
     out.write_all(b"    mov     rax, 60\n")?;
     out.write_all(b"    mov     rdi, 0\n")?;
     out.write_all(b"    syscall\n")?;
 
     for op in program.ops.iter() {
         match op {
-            Op::DefFn(s) => out.write_fmt(format_args!("{}:\n", s))?,
+            Op::DefFn(s) => {
+                out.write_fmt(format_args!("{}:\n", s))?;
+            }
             Op::PrepFn(i) => {
                 out.write_fmt(format_args!("    push rbp\n"))?;
                 out.write_fmt(format_args!("    mov rbp, rsp\n"))?;
@@ -259,6 +297,17 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    and al, 1\n"))?;
                 out.write_fmt(format_args!("    movzx rax, al\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::JmpZero(l) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    cmp rax, 0\n"))?;
+                out.write_fmt(format_args!("    je {}\n", l))?;
+            }
+            Op::Jmp(l) => {
+                out.write_fmt(format_args!("    jmp {}\n", l))?;
+            }
+            Op::Lbl(l) => {
+                out.write_fmt(format_args!("{}:\n", l))?;
             }
         }
     }

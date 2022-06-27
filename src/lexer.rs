@@ -13,6 +13,7 @@ pub enum Token {
     Div,
     GreaterThan,
     LessThan,
+    LogicalAnd,
 }
 
 #[derive(Debug)]
@@ -225,6 +226,23 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Handles operators that are more than one character.
+    fn handle_special_operators(&mut self) -> Option<Token> {
+        match self.token.as_str() {
+            "&" => match self.reader.peek() {
+                Some(c) => {
+                    if c == '&' {
+                        self.reader.next();
+                        return Some(Token::LogicalAnd);
+                    }
+                    return None;
+                }
+                None => None,
+            },
+            _ => None,
+        }
+    }
+
     fn handle_keyword(&self) -> Option<Token> {
         match self.token.as_str() {
             "i32" => Some(Token::I32),
@@ -269,6 +287,14 @@ impl<'a> Lexer<'a> {
 
             if self.token.as_bytes()[0].is_ascii_whitespace() {
                 continue;
+            }
+
+            match self.handle_special_operators() {
+                Some(t) => {
+                    self.push_token(t);
+                    continue;
+                }
+                None => (),
             }
 
             match self.handle_single_char() {
