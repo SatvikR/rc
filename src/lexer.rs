@@ -59,17 +59,22 @@ impl<'a> SourceFile<'a> {
             data: data,
         }
     }
+
+    pub fn get_root(&self) -> &str {
+        let mut spl = self.path.split(".");
+        return spl.next().unwrap();
+    }
 }
 
 struct SourceCodeReader<'a> {
-    src: SourceFile<'a>,
+    src: &'a SourceFile<'a>,
     cur: usize,
     len: usize,
     loc: Loc,
 }
 
 impl<'a> SourceCodeReader<'a> {
-    fn new(src_f: SourceFile<'a>) -> Self {
+    fn new(src_f: &'a SourceFile<'a>) -> Self {
         let src_len = src_f.data.len();
         let src_path = src_f.path.clone();
 
@@ -141,7 +146,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(src: SourceFile<'a>) -> Self {
+    pub fn new(src: &'a SourceFile<'a>) -> Self {
         Self {
             token: String::from(""),
             reader: SourceCodeReader::new(src),

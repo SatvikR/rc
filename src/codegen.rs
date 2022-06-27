@@ -143,7 +143,17 @@ impl<'a, 'b> IRGen<'a, 'b> {
                         "cannot perform variable decl outside of function"
                     );
 
-                    self.ctx.get_curr_fn().stack_size += 1;
+                    match typ {
+                        Type::I32 => {
+                            self.ctx.get_curr_fn().stack_size += 4;
+                            let offset = self.ctx.get_curr_fn().stack_size;
+
+                            self.gen_expr(expr);
+                            self.ctx.out.ops.push(Op::Pop);
+                            self.ctx.out.ops.push(Op::MovI32(offset));
+                        }
+                    }
+
                     let stack_size = self.ctx.get_curr_fn().stack_size;
                     self.ctx.get_curr_frame().symbols.insert(
                         ident.to_string(),
@@ -152,17 +162,6 @@ impl<'a, 'b> IRGen<'a, 'b> {
                             offset: stack_size,
                         },
                     );
-
-                    match typ {
-                        Type::I32 => {
-                            let offset =
-                                self.ctx.get_curr_frame().symbols.get(ident).unwrap().offset;
-
-                            self.gen_expr(expr);
-                            self.ctx.out.ops.push(Op::Pop);
-                            self.ctx.out.ops.push(Op::MovI32(offset));
-                        }
-                    }
                 }
             }
         }
@@ -171,12 +170,12 @@ impl<'a, 'b> IRGen<'a, 'b> {
     }
 }
 
-pub fn generate_x86_64(ast: &ProgramTree) -> std::io::Result<()> {
+pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     let mut ctx = IRGenCtx::new();
     let mut ir_gen = IRGen::new(ast, &mut ctx);
     let program = ir_gen.gen();
 
-    let mut out = File::create("./prog.asm")?;
+    let mut out = File::create(path)?;
 
     out.write_all(b"section .text\n")?;
     out.write_all(b"    global _start\n")?;
@@ -192,7 +191,7 @@ pub fn generate_x86_64(ast: &ProgramTree) -> std::io::Result<()> {
             Op::PrepFn(i) => {
                 out.write_fmt(format_args!("    push rbp\n"))?;
                 out.write_fmt(format_args!("    mov rbp, rsp\n"))?;
-                out.write_fmt(format_args!("    sub rsp, {}\n", i * 8))?;
+                out.write_fmt(format_args!("    sub rsp, {}\n", i))?;
             }
             Op::Push(n) => {
                 out.write_fmt(format_args!("    mov eax, {}\n", n))?;
@@ -227,7 +226,7 @@ pub fn generate_x86_64(ast: &ProgramTree) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    pop rax\n"))?;
             }
             Op::MovI32(i) => {
-                out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i * 8))?;
+                out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
             }
             Op::EndFn => {
                 out.write_fmt(format_args!("    mov rsp, rbp\n"))?;

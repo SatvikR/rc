@@ -1,7 +1,12 @@
 mod codegen;
 mod lexer;
 mod parser;
-use std::{env, fs::File, io::Read, process::exit};
+use std::{
+    env,
+    fs::File,
+    io::{self, Read, Write},
+    process::{exit, Command},
+};
 
 use codegen::generate_x86_64;
 use lexer::Lexer;
@@ -30,6 +35,21 @@ fn load_src_file(path: &String) -> String {
     return src_str;
 }
 
+fn cmd_and_log(cmd: &str) {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+        .expect(&format!("[ERROR] Error running `{}`", cmd));
+
+    println!("[CMD] {}", cmd);
+    io::stdout().write_all(&output.stdout).unwrap();
+    io::stderr().write_all(&output.stderr).unwrap();
+    if !output.status.success() {
+        exit(1);
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -42,7 +62,7 @@ fn main() {
     let src_str = load_src_file(program_path);
 
     let src_buf = src_str.as_bytes();
-    let src_file = SourceFile::new(program_path.to_string(), src_buf);
+    let src_file = &SourceFile::new(program_path.to_string(), src_buf);
 
     let mut lexer = Lexer::new(src_file);
     let tokens = lexer.lex();
@@ -50,5 +70,12 @@ fn main() {
     let mut parser = Parser::new(tokens);
     let parsed_program = parser.parse();
 
-    generate_x86_64(parsed_program).unwrap();
+    let src_asm = format!("{}.asm", src_file.get_root());
+    let src_obj = format!("{}.o", src_file.get_root());
+    let src_exe = format!("{}", src_file.get_root());
+
+    generate_x86_64(parsed_program, &src_asm).unwrap();
+
+    cmd_and_log(&format!("nasm -felf64 {} -o {}", src_asm, src_obj));
+    cmd_and_log(&format!("ld -o {} {}", src_exe, src_obj));
 }
