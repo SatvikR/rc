@@ -14,6 +14,7 @@ pub enum Token {
     GreaterThan,
     LessThan,
     LogicalAnd,
+    LogicalOr,
 }
 
 #[derive(Debug)]
@@ -234,6 +235,16 @@ impl<'a> Lexer<'a> {
                     if c == '&' {
                         self.reader.next();
                         return Some(Token::LogicalAnd);
+                    }
+                    return None;
+                }
+                None => None,
+            },
+            "|" => match self.reader.peek() {
+                Some(c) => {
+                    if c == '|' {
+                        self.reader.next();
+                        return Some(Token::LogicalOr);
                     }
                     return None;
                 }

@@ -31,6 +31,7 @@ enum Op {
     Gt,
     Lt,
     JmpZero(String),
+    JmpNotZero(String),
     Jmp(String),
     Lbl(String),
 }
@@ -154,6 +155,25 @@ impl<'a, 'b> IRGen<'a, 'b> {
 
                         self.ctx.out.ops.push(Op::Lbl(lbl_false.clone()));
                         self.ctx.out.ops.push(Op::Push(0));
+
+                        self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
+                        return;
+                    }
+                    BinOperator::LogicalOr => {
+                        let lbl_true = self.ctx.get_next_label();
+                        let lbl_out = self.ctx.get_next_label();
+
+                        self.gen_expr(e1);
+                        self.ctx.out.ops.push(Op::JmpNotZero(lbl_true.clone()));
+
+                        self.gen_expr(e2);
+                        self.ctx.out.ops.push(Op::JmpNotZero(lbl_true.clone()));
+
+                        self.ctx.out.ops.push(Op::Push(0));
+                        self.ctx.out.ops.push(Op::Jmp(lbl_out.clone()));
+
+                        self.ctx.out.ops.push(Op::Lbl(lbl_true.clone()));
+                        self.ctx.out.ops.push(Op::Push(1));
 
                         self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
                         return;
@@ -301,7 +321,12 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::JmpZero(l) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    cmp rax, 0\n"))?;
-                out.write_fmt(format_args!("    je {}\n", l))?;
+                out.write_fmt(format_args!("    jz {}\n", l))?;
+            }
+            Op::JmpNotZero(l) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    cmp rax, 0\n"))?;
+                out.write_fmt(format_args!("    jnz {}\n", l))?;
             }
             Op::Jmp(l) => {
                 out.write_fmt(format_args!("    jmp {}\n", l))?;

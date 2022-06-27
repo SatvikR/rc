@@ -16,6 +16,7 @@ pub enum BinOperator {
     GreaterThan,
     LessThan,
     LogicalAnd,
+    LogicalOr,
 }
 
 #[derive(Debug)]
@@ -187,6 +188,14 @@ impl<'a> Parser<'a> {
                         self.reader.next();
                         return Expr::BinOp {
                             op: BinOperator::LogicalAnd,
+                            e1: Box::new(exp),
+                            e2: Box::new(self.handle_expression()),
+                        };
+                    }
+                    Token::LogicalOr => {
+                        self.reader.next();
+                        return Expr::BinOp {
+                            op: BinOperator::LogicalOr,
                             e1: Box::new(exp),
                             e2: Box::new(self.handle_expression()),
                         };
