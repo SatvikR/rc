@@ -6,21 +6,20 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
+    process::exit,
 };
 
-use crate::parser::{BinOperator, Expr, ProgramTree, Stmt, Type};
-
-#[derive(Debug)]
-pub struct CompilerError {
-    pub err_message: String,
-}
+use crate::{
+    lexer::Loc,
+    parser::{BinOperator, Expr, ProgramTree, Stmt, Type},
+};
 
 /// High-level assembly instructions, a.k.a an intermediate representation
 #[derive(Debug)]
 enum Op {
     DefFn(String),
     PrepFn(i32),
-    Push(i32),
+    Push(i64),
     Pop,
     MovI32(i32), // value is the stack offset
     EndFn,
@@ -79,12 +78,16 @@ impl IRGenCtx {
         }
     }
 
-    fn get_curr_fn(&mut self) -> &mut IRFn {
+    fn get_curr_fn_mut(&mut self) -> &mut IRFn {
         return self.curr_fn.as_mut().unwrap();
     }
 
+    fn get_curr_fn(&self) -> &IRFn {
+        return self.curr_fn.as_ref().unwrap();
+    }
+
     fn get_curr_frame(&mut self) -> &mut IRFrame {
-        return self.get_curr_fn().curr_frame();
+        return self.get_curr_fn_mut().curr_frame();
     }
 
     fn get_next_label(&mut self) -> String {
@@ -104,6 +107,11 @@ impl<'a, 'b> IRGen<'a, 'b> {
         Self { ast: ast, ctx: ctx }
     }
 
+    fn error(error: &str, loc: &Loc) {
+        eprintln!("[ERR_CODEGEN] {}: {}", loc, error);
+        exit(1);
+    }
+
     fn introduce_function(&mut self, name: &str) {
         self.ctx.out.ops.push(Op::DefFn(name.to_string()));
 
@@ -114,7 +122,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
             prep_loc: self.ctx.out.ops.len() - 1,
             stack_size: 0,
         });
-        self.ctx.get_curr_fn().frames.push(IRFrame {
+        self.ctx.get_curr_fn_mut().frames.push(IRFrame {
             symbols: HashMap::new(),
         });
     }
@@ -122,11 +130,11 @@ impl<'a, 'b> IRGen<'a, 'b> {
     fn end_function(&mut self) {
         self.ctx.out.ops.push(Op::EndFn);
 
-        let prep_loc = self.ctx.get_curr_fn().prep_loc;
+        let prep_loc = self.ctx.get_curr_fn_mut().prep_loc;
 
         match self.ctx.out.ops[prep_loc] {
             Op::PrepFn(_) => {
-                self.ctx.out.ops[prep_loc] = Op::PrepFn(self.ctx.get_curr_fn().stack_size);
+                self.ctx.out.ops[prep_loc] = Op::PrepFn(self.ctx.get_curr_fn_mut().stack_size);
             }
             _ => panic!("Compiler Error: PrepFn Op was expected but not obtained"),
         }
@@ -136,7 +144,7 @@ impl<'a, 'b> IRGen<'a, 'b> {
 
     fn gen_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push(*n)),
+            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push((*n).into())),
             Expr::BinOp { op, e1, e2 } => {
                 // handle logical operators differently
                 match op {
@@ -196,35 +204,74 @@ impl<'a, 'b> IRGen<'a, 'b> {
         }
     }
 
+    fn get_size(typ: &Type) -> i32 {
+        match typ {
+            Type::I32 => 4,
+        }
+    }
+
+    fn gen_move(&mut self, typ: &Type, val: &Expr, offset: i32) {
+        match typ {
+            Type::I32 => {
+                self.gen_expr(val);
+                self.ctx.out.ops.push(Op::Pop);
+                self.ctx.out.ops.push(Op::MovI32(offset));
+            }
+        }
+    }
+
+    fn get_symbol(&self, ident: &String) -> Option<&IRSymbol> {
+        // Search backwards through the stackframes to look for a symbol
+        for frame in self.ctx.get_curr_fn().frames.iter().rev() {
+            match frame.symbols.get(ident) {
+                Some(s) => return Some(s),
+                _ => (),
+            }
+        }
+        None
+    }
+
     fn gen(&mut self) -> &IRProgram {
         self.introduce_function("main");
-        for stmt in self.ast.stmts.iter() {
-            match stmt {
+        for s in self.ast.stmts.iter() {
+            match &s.stmt {
                 Stmt::VarDecl { typ, ident, expr } => {
                     assert!(
                         self.ctx.curr_fn.is_some(),
                         "cannot perform variable decl outside of function"
                     );
 
-                    match typ {
-                        Type::I32 => {
-                            self.ctx.get_curr_fn().stack_size += 4;
-                            let offset = self.ctx.get_curr_fn().stack_size;
+                    self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
+                    let offset = self.ctx.get_curr_fn_mut().stack_size;
+                    self.gen_move(typ, expr, offset);
 
-                            self.gen_expr(expr);
-                            self.ctx.out.ops.push(Op::Pop);
-                            self.ctx.out.ops.push(Op::MovI32(offset));
-                        }
-                    }
-
-                    let stack_size = self.ctx.get_curr_fn().stack_size;
                     self.ctx.get_curr_frame().symbols.insert(
                         ident.to_string(),
                         IRSymbol {
-                            typ: Type::I32,
-                            offset: stack_size,
+                            typ: typ.clone(),
+                            offset: offset,
                         },
                     );
+                }
+                Stmt::VarAsgmt { ident, expr } => {
+                    assert!(
+                        self.ctx.curr_fn.is_some(),
+                        "cannot perform variable asgmt outside of function"
+                    );
+
+                    let symbol_option = self.get_symbol(ident);
+                    match symbol_option {
+                        None => {
+                            Self::error(&format!("undeclared identifier '{}'", ident), &s.loc);
+                            panic!();
+                        }
+                        _ => (),
+                    };
+
+                    let symbol = symbol_option.unwrap();
+                    let typ = symbol.typ.clone();
+                    let offset = symbol.offset;
+                    self.gen_move(&typ, expr, offset);
                 }
             }
         }

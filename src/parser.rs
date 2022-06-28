@@ -2,7 +2,7 @@ use std::process::exit;
 
 use crate::lexer::{LexedToken, Loc, Token, Tokens};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Type {
     I32,
 }
@@ -36,6 +36,16 @@ pub enum Stmt {
         ident: String,
         expr: Expr,
     },
+    VarAsgmt {
+        ident: String,
+        expr: Expr,
+    },
+}
+
+#[derive(Debug)]
+pub struct ParsedStmt {
+    pub stmt: Stmt,
+    pub loc: Loc,
 }
 
 struct TokenReader<'a> {
@@ -79,13 +89,14 @@ impl<'a> TokenReader<'a> {
 /// Program AST
 #[derive(Debug)]
 pub struct ProgramTree {
-    pub stmts: Vec<Stmt>,
+    pub stmts: Vec<ParsedStmt>,
 }
 
 /// Source code parser
 pub struct Parser<'a> {
     reader: TokenReader<'a>,
     prog: ProgramTree,
+    curr_stmt_loc: Option<Loc>,
 }
 
 impl<'a> Parser<'a> {
@@ -93,6 +104,7 @@ impl<'a> Parser<'a> {
         Parser {
             reader: TokenReader::new(t),
             prog: ProgramTree { stmts: Vec::new() },
+            curr_stmt_loc: None,
         }
     }
 
@@ -241,19 +253,81 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_var_asgmt_stmt(&mut self) -> Stmt {
+        // Read in the identifier
+        let ident_token = match self.reader.next() {
+            Some(t) => match &t.token {
+                Token::Identifier(n) => n.clone(),
+                _ => {
+                    Self::error("expected identifier", &t.loc);
+                    panic!();
+                }
+            },
+            None => {
+                Self::error("expected identifier", &self.reader.eof);
+                panic!();
+            }
+        };
+
+        // Read in equals sign
+        match self.reader.next() {
+            Some(t) => match t.token {
+                Token::Equals => (),
+                _ => {
+                    Self::error("expected '='", &t.loc);
+                }
+            },
+            None => {
+                Self::error("expected identifier", &self.reader.eof);
+            }
+        }
+
+        // Read in the expression
+        let decl_expr = self.handle_expression();
+
+        // Read in semicolon
+        match self.reader.next() {
+            Some(t) => match &t.token {
+                Token::Semicolon => (),
+                _ => {
+                    Self::error("expected ';'", &t.loc);
+                }
+            },
+            None => {
+                Self::error("expected ';'", &self.reader.eof);
+            }
+        }
+
+        Stmt::VarAsgmt {
+            ident: ident_token,
+            expr: decl_expr,
+        }
+    }
+
     pub fn parse(&mut self) -> &ProgramTree {
         while !self.reader.is_empty() {
             let token = match self.reader.peek() {
                 Some(t) => t,
                 None => break,
             };
+            self.curr_stmt_loc = Some(token.loc.clone());
 
-            match token.token {
+            match &token.token {
                 Token::I32 => {
                     let stmt = self.handle_var_decl_stmt();
-                    self.prog.stmts.push(stmt)
+                    self.prog.stmts.push(ParsedStmt {
+                        stmt: stmt,
+                        loc: self.curr_stmt_loc.as_ref().unwrap().clone(),
+                    });
                 }
-                _ => Self::error("expected expression", &token.loc),
+                Token::Identifier(_) => {
+                    let stmt = self.handle_var_asgmt_stmt();
+                    self.prog.stmts.push(ParsedStmt {
+                        stmt: stmt,
+                        loc: self.curr_stmt_loc.as_ref().unwrap().clone(),
+                    });
+                }
+                _ => Self::error("invalid start to statement", &token.loc),
             }
         }
         &self.prog
