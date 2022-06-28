@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     lexer::Loc,
-    parser::{BinOperator, Expr, ProgramTree, Stmt, Type},
+    parser::{BinOperator, Expr, ParsedStmt, ProgramTree, Stmt, Type},
 };
 
 /// High-level assembly instructions, a.k.a an intermediate representation
@@ -97,14 +97,13 @@ impl IRGenCtx {
 }
 
 // Generates IR from an AST
-struct IRGen<'a, 'b> {
-    ast: &'a ProgramTree,
-    ctx: &'b mut IRGenCtx,
+struct IRGen<'a> {
+    ctx: &'a mut IRGenCtx,
 }
 
-impl<'a, 'b> IRGen<'a, 'b> {
-    fn new(ast: &'a ProgramTree, ctx: &'b mut IRGenCtx) -> Self {
-        Self { ast: ast, ctx: ctx }
+impl<'a> IRGen<'a> {
+    fn new(ctx: &'a mut IRGenCtx) -> Self {
+        Self { ctx: ctx }
     }
 
     fn error(error: &str, loc: &Loc) {
@@ -231,9 +230,8 @@ impl<'a, 'b> IRGen<'a, 'b> {
         None
     }
 
-    fn gen(&mut self) -> &IRProgram {
-        self.introduce_function("main");
-        for s in self.ast.stmts.iter() {
+    fn gen_stmts(&mut self, stmts: &Vec<ParsedStmt>) {
+        for s in stmts.iter() {
             match &s.stmt {
                 Stmt::VarDecl { typ, ident, expr } => {
                     assert!(
@@ -273,17 +271,30 @@ impl<'a, 'b> IRGen<'a, 'b> {
                     let offset = symbol.offset;
                     self.gen_move(&typ, expr, offset);
                 }
+                Stmt::Scope { stmts: scope_stmts } => {
+                    self.ctx.get_curr_fn_mut().frames.push(IRFrame {
+                        symbols: HashMap::new(),
+                    });
+                    self.gen_stmts(scope_stmts);
+                    self.ctx.get_curr_fn_mut().frames.pop();
+                }
             }
         }
+    }
+
+    fn gen_prog(&mut self, ast: &ProgramTree) -> &IRProgram {
+        self.introduce_function("main");
+        self.gen_stmts(&ast.stmts);
         self.end_function();
-        return &self.ctx.out;
+
+        &self.ctx.out
     }
 }
 
 pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     let mut ctx = IRGenCtx::new();
-    let mut ir_gen = IRGen::new(ast, &mut ctx);
-    let program = ir_gen.gen();
+    let mut ir_gen = IRGen::new(&mut ctx);
+    let program = ir_gen.gen_prog(ast);
 
     let f = File::create(path)?;
     let mut out = BufWriter::new(f);

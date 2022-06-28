@@ -15,6 +15,8 @@ pub enum Token {
     LessThan,
     LogicalAnd,
     LogicalOr,
+    OpenCurly,
+    CloseCurly,
 }
 
 #[derive(Debug)]
@@ -214,15 +216,17 @@ impl<'a> Lexer<'a> {
 
     /// Return a token if the source string is a seperator.
     fn handle_single_char(&self) -> Option<Token> {
-        match self.token.as_str() {
-            ";" => Some(Token::Semicolon),
-            "=" => Some(Token::Equals),
-            "+" => Some(Token::Plus),
-            "-" => Some(Token::Minus),
-            "*" => Some(Token::Mult),
-            "/" => Some(Token::Div),
-            ">" => Some(Token::GreaterThan),
-            "<" => Some(Token::LessThan),
+        match self.token.as_str().chars().nth(0).unwrap() {
+            ';' => Some(Token::Semicolon),
+            '=' => Some(Token::Equals),
+            '+' => Some(Token::Plus),
+            '-' => Some(Token::Minus),
+            '*' => Some(Token::Mult),
+            '/' => Some(Token::Div),
+            '>' => Some(Token::GreaterThan),
+            '<' => Some(Token::LessThan),
+            '{' => Some(Token::OpenCurly),
+            '}' => Some(Token::CloseCurly),
             _ => None,
         }
     }

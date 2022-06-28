@@ -40,6 +40,9 @@ pub enum Stmt {
         ident: String,
         expr: Expr,
     },
+    Scope {
+        stmts: Vec<ParsedStmt>,
+    },
 }
 
 #[derive(Debug)]
@@ -304,31 +307,57 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> &ProgramTree {
-        while !self.reader.is_empty() {
+    fn handle_scope(&mut self) -> Stmt {
+        self.reader.next();
+        let mut stmts = Vec::new();
+        loop {
             let token = match self.reader.peek() {
                 Some(t) => t,
-                None => break,
+                None => {
+                    Self::error("expected a statement", &self.reader.eof);
+                    panic!();
+                }
             };
-            self.curr_stmt_loc = Some(token.loc.clone());
 
-            match &token.token {
-                Token::I32 => {
-                    let stmt = self.handle_var_decl_stmt();
-                    self.prog.stmts.push(ParsedStmt {
-                        stmt: stmt,
-                        loc: self.curr_stmt_loc.as_ref().unwrap().clone(),
-                    });
-                }
-                Token::Identifier(_) => {
-                    let stmt = self.handle_var_asgmt_stmt();
-                    self.prog.stmts.push(ParsedStmt {
-                        stmt: stmt,
-                        loc: self.curr_stmt_loc.as_ref().unwrap().clone(),
-                    });
-                }
-                _ => Self::error("invalid start to statement", &token.loc),
+            if matches!(token.token, Token::CloseCurly) {
+                self.reader.next();
+                return Stmt::Scope { stmts: stmts };
             }
+
+            let next_stmt = self.parse_stmt();
+            stmts.push(next_stmt);
+        }
+    }
+
+    fn parse_stmt(&mut self) -> ParsedStmt {
+        let token = match self.reader.peek() {
+            Some(t) => t,
+            None => {
+                Self::error("expected a statement", &self.reader.eof);
+                panic!();
+            }
+        };
+        self.curr_stmt_loc = Some(token.loc.clone());
+
+        let stmt = match &token.token {
+            Token::I32 => self.handle_var_decl_stmt(),
+            Token::Identifier(_) => self.handle_var_asgmt_stmt(),
+            Token::OpenCurly => self.handle_scope(),
+            _ => {
+                Self::error("invalid start to statement", &token.loc);
+                panic!();
+            }
+        };
+        ParsedStmt {
+            stmt: stmt,
+            loc: self.curr_stmt_loc.as_ref().unwrap().clone(),
+        }
+    }
+
+    pub fn parse(&mut self) -> &ProgramTree {
+        while !self.reader.is_empty() {
+            let next_stmt = self.parse_stmt();
+            self.prog.stmts.push(next_stmt);
         }
         &self.prog
     }
