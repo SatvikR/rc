@@ -5,6 +5,7 @@
 use std::{
     collections::HashMap,
     fs::File,
+    intrinsics::transmute,
     io::{BufWriter, Write},
     process::exit,
 };
@@ -21,7 +22,7 @@ enum Op {
     PrepFn(i32),
     Push(i64),
     Pop,
-    MovI32(i32), // value is the stack offset
+    Mov32(u32), // value is the stack offset
     EndFn,
     Add,
     Sub,
@@ -214,7 +215,7 @@ impl<'a> IRGen<'a> {
             Type::I32 => {
                 self.gen_expr(val);
                 self.ctx.out.ops.push(Op::Pop);
-                self.ctx.out.ops.push(Op::MovI32(offset));
+                self.ctx.out.ops.push(Op::Mov32(offset as u32));
             }
         }
     }
@@ -325,7 +326,7 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::Pop => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
             }
-            Op::MovI32(i) => {
+            Op::Mov32(i) => {
                 out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
             }
             Op::EndFn => {
