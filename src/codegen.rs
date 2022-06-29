@@ -5,24 +5,25 @@
 use std::{
     collections::HashMap,
     fs::File,
-    intrinsics::transmute,
     io::{BufWriter, Write},
     process::exit,
 };
 
 use crate::{
     lexer::Loc,
-    parser::{BinOperator, Expr, ParsedStmt, ProgramTree, Stmt, Type},
+    parser::{BinOperator, Expr, ParsedExpr, ParsedStmt, ProgramTree, Stmt, Type},
 };
 
 /// High-level assembly instructions, a.k.a an intermediate representation
 #[derive(Debug)]
 enum Op {
     DefFn(String),
-    PrepFn(i32),
-    Push(i64),
-    Pop,
-    Mov32(u32), // value is the stack offset
+    PrepFn(u32),
+    /// pushing values
+    Push(u64),
+    /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
+    Mov32(u32),
+    Push32(u32),
     EndFn,
     Add,
     Sub,
@@ -43,7 +44,7 @@ struct IRProgram {
 
 struct IRSymbol {
     typ: Type,
-    offset: i32,
+    offset: u32,
 }
 
 // Stack Frame but more specifically a scope
@@ -54,7 +55,7 @@ struct IRFrame {
 struct IRFn {
     frames: Vec<IRFrame>, // stack of HashSets containing symbols
     prep_loc: usize,
-    stack_size: i32,
+    stack_size: u32,
 }
 
 impl IRFn {
@@ -142,9 +143,24 @@ impl<'a> IRGen<'a> {
         self.ctx.curr_fn = None;
     }
 
-    fn gen_expr(&mut self, expr: &Expr) {
-        match expr {
-            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push((*n).into())),
+    fn gen_expr(&mut self, e: &ParsedExpr) {
+        match &e.expr {
+            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push((*n as u32).into())),
+            Expr::Identifier(ident) => {
+                let symbol_opt = self.get_symbol(ident);
+                match symbol_opt {
+                    None => {
+                        Self::error(&format!("undeclared identifier '{}'", ident), &e.loc);
+                        panic!();
+                    }
+                    Some(_) => (),
+                }
+
+                let symbol = symbol_opt.unwrap();
+                let typ = symbol.typ.clone();
+                let offset = symbol.offset;
+                self.gen_push(&typ, offset);
+            }
             Expr::BinOp { op, e1, e2 } => {
                 // handle logical operators differently
                 match op {
@@ -204,18 +220,25 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn get_size(typ: &Type) -> i32 {
+    fn get_size(typ: &Type) -> u32 {
         match typ {
             Type::I32 => 4,
         }
     }
 
-    fn gen_move(&mut self, typ: &Type, val: &Expr, offset: i32) {
+    fn gen_move(&mut self, typ: &Type, val: &ParsedExpr, offset: u32) {
         match typ {
             Type::I32 => {
                 self.gen_expr(val);
-                self.ctx.out.ops.push(Op::Pop);
-                self.ctx.out.ops.push(Op::Mov32(offset as u32));
+                self.ctx.out.ops.push(Op::Mov32(offset));
+            }
+        }
+    }
+
+    fn gen_push(&mut self, typ: &Type, offset: u32) {
+        match typ {
+            Type::I32 => {
+                self.ctx.out.ops.push(Op::Push32(offset));
             }
         }
     }
@@ -320,14 +343,16 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    sub rsp, {}\n", i))?;
             }
             Op::Push(n) => {
-                out.write_fmt(format_args!("    mov eax, {}\n", n))?;
+                out.write_fmt(format_args!("    mov rax, {}\n", n))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
-            Op::Pop => {
-                out.write_fmt(format_args!("    pop rax\n"))?;
-            }
             Op::Mov32(i) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
+            }
+            Op::Push32(i) => {
+                out.write_fmt(format_args!("    mov eax, DWORD [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::EndFn => {
                 out.write_fmt(format_args!("    mov rsp, rbp\n"))?;

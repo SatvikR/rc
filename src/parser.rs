@@ -24,9 +24,16 @@ pub enum Expr {
     IntLiteral(i32),
     BinOp {
         op: BinOperator,
-        e1: Box<Expr>,
-        e2: Box<Expr>,
+        e1: Box<ParsedExpr>,
+        e2: Box<ParsedExpr>,
     },
+    Identifier(String),
+}
+
+#[derive(Debug)]
+pub struct ParsedExpr {
+    pub expr: Expr,
+    pub loc: Loc,
 }
 
 #[derive(Debug)]
@@ -34,11 +41,11 @@ pub enum Stmt {
     VarDecl {
         typ: Type,
         ident: String,
-        expr: Expr,
+        expr: ParsedExpr,
     },
     VarAsgmt {
         ident: String,
-        expr: Expr,
+        expr: ParsedExpr,
     },
     Scope {
         stmts: Vec<ParsedStmt>,
@@ -174,10 +181,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_factor(&mut self) -> Expr {
+    fn handle_factor(&mut self) -> ParsedExpr {
         match self.reader.next() {
             Some(t) => match &t.token {
-                Token::IntLiteral(n) => Expr::IntLiteral(*n),
+                Token::IntLiteral(n) => ParsedExpr {
+                    expr: Expr::IntLiteral(*n),
+                    loc: t.loc.clone(),
+                },
                 Token::OpenParan => {
                     let exp = self.handle_expression();
                     match self.reader.next() {
@@ -193,6 +203,10 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
+                Token::Identifier(s) => ParsedExpr {
+                    expr: Expr::Identifier(String::from(s)),
+                    loc: t.loc.clone(),
+                },
                 _ => {
                     Self::error("expected a ident, number or ( + expression + )", &t.loc);
                     panic!();
@@ -208,7 +222,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_muldiv(&mut self) -> Expr {
+    fn handle_muldiv(&mut self) -> ParsedExpr {
         let mut exp = self.handle_factor();
         loop {
             // Read in *|/ operator if exists
@@ -223,15 +237,19 @@ impl<'a> Parser<'a> {
             self.reader.next();
 
             let exp_two = self.handle_factor();
-            exp = Expr::BinOp {
-                op: exp_bin_op,
-                e1: Box::new(exp),
-                e2: Box::new(exp_two),
+            let loc = exp.loc.clone();
+            exp = ParsedExpr {
+                expr: Expr::BinOp {
+                    op: exp_bin_op,
+                    e1: Box::new(exp),
+                    e2: Box::new(exp_two),
+                },
+                loc: loc,
             }
         }
     }
 
-    fn handle_addsub(&mut self) -> Expr {
+    fn handle_addsub(&mut self) -> ParsedExpr {
         let mut exp = self.handle_muldiv();
         loop {
             // Read in +|- operator if exists
@@ -246,15 +264,19 @@ impl<'a> Parser<'a> {
             self.reader.next();
 
             let exp_two = self.handle_muldiv();
-            exp = Expr::BinOp {
-                op: exp_bin_op,
-                e1: Box::new(exp),
-                e2: Box::new(exp_two),
+            let loc = exp.loc.clone();
+            exp = ParsedExpr {
+                expr: Expr::BinOp {
+                    op: exp_bin_op,
+                    e1: Box::new(exp),
+                    e2: Box::new(exp_two),
+                },
+                loc: loc,
             }
         }
     }
 
-    fn handle_cmp(&mut self) -> Expr {
+    fn handle_cmp(&mut self) -> ParsedExpr {
         let mut exp = self.handle_addsub();
         loop {
             // Read in <|> operator if exists
@@ -269,15 +291,19 @@ impl<'a> Parser<'a> {
             self.reader.next();
 
             let exp_two = self.handle_cmp();
-            exp = Expr::BinOp {
-                op: exp_bin_op,
-                e1: Box::new(exp),
-                e2: Box::new(exp_two),
+            let loc = exp.loc.clone();
+            exp = ParsedExpr {
+                expr: Expr::BinOp {
+                    op: exp_bin_op,
+                    e1: Box::new(exp),
+                    e2: Box::new(exp_two),
+                },
+                loc: loc,
             }
         }
     }
 
-    fn handle_and(&mut self) -> Expr {
+    fn handle_and(&mut self) -> ParsedExpr {
         let mut exp = self.handle_cmp();
         loop {
             // Read in && operator if exists
@@ -292,15 +318,19 @@ impl<'a> Parser<'a> {
             self.reader.next();
 
             let exp_two = self.handle_cmp();
-            exp = Expr::BinOp {
-                op: BinOperator::LogicalAnd,
-                e1: Box::new(exp),
-                e2: Box::new(exp_two),
+            let loc = exp.loc.clone();
+            exp = ParsedExpr {
+                expr: Expr::BinOp {
+                    op: BinOperator::LogicalAnd,
+                    e1: Box::new(exp),
+                    e2: Box::new(exp_two),
+                },
+                loc: loc,
             }
         }
     }
 
-    fn handle_or(&mut self) -> Expr {
+    fn handle_or(&mut self) -> ParsedExpr {
         let mut exp = self.handle_and();
         loop {
             // Read in || operator if exists
@@ -315,16 +345,20 @@ impl<'a> Parser<'a> {
             self.reader.next();
 
             let exp_two = self.handle_and();
-            exp = Expr::BinOp {
-                op: BinOperator::LogicalOr,
-                e1: Box::new(exp),
-                e2: Box::new(exp_two),
+            let loc = exp.loc.clone();
+            exp = ParsedExpr {
+                expr: Expr::BinOp {
+                    op: BinOperator::LogicalOr,
+                    e1: Box::new(exp),
+                    e2: Box::new(exp_two),
+                },
+                loc: loc,
             }
         }
     }
 
     /// Recursive descent parser for parsing expressions
-    fn handle_expression(&mut self) -> Expr {
+    fn handle_expression(&mut self) -> ParsedExpr {
         self.handle_or()
     }
 
