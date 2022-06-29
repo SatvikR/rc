@@ -174,86 +174,158 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_expression(&mut self) -> Expr {
-        // Actual "terms" of expressions can be expressions themselves
-        // for example: 10 + 10 + 10, is really 2 expressions,
-        // as in 10 + (10 + 10) which would be parsed to add(10, add(10, 10))
-        // An operator is what gets turned into the actual AST node, the literals
-        // are the contents of the terms.
-
-        let mut exp = match self.reader.next() {
+    fn handle_factor(&mut self) -> Expr {
+        match self.reader.next() {
             Some(t) => match &t.token {
-                Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
+                Token::IntLiteral(n) => Expr::IntLiteral(*n),
+                Token::OpenParan => {
+                    let exp = self.handle_expression();
+                    match self.reader.next() {
+                        Some(t) => {
+                            if !matches!(&t.token, Token::CloseParan) {
+                                Self::error("expected ')'", &t.loc)
+                            }
+                            exp
+                        }
+                        None => {
+                            Self::error("expected ')'", &self.reader.eof);
+                            panic!();
+                        }
+                    }
+                }
                 _ => {
-                    Self::error("expected expression", &t.loc);
+                    Self::error("expected a ident, number or ( + expression + )", &t.loc);
                     panic!();
                 }
             },
             None => {
-                Self::error("expected expression", &self.reader.eof);
+                Self::error(
+                    "expected a ident, number or ( + expression + )",
+                    &self.reader.eof,
+                );
                 panic!();
             }
-        };
+        }
+    }
 
+    fn handle_muldiv(&mut self) -> Expr {
+        let mut exp = self.handle_factor();
         loop {
-            // Handle logical operators differently, since they are not chained in the same way
-            match self.reader.peek() {
-                Some(t) => match &t.token {
-                    Token::LogicalAnd => {
-                        self.reader.next();
-                        return Expr::BinOp {
-                            op: BinOperator::LogicalAnd,
-                            e1: Box::new(exp),
-                            e2: Box::new(self.handle_expression()),
-                        };
-                    }
-                    Token::LogicalOr => {
-                        self.reader.next();
-                        return Expr::BinOp {
-                            op: BinOperator::LogicalOr,
-                            e1: Box::new(exp),
-                            e2: Box::new(self.handle_expression()),
-                        };
-                    }
-                    _ => (),
-                },
-                None => (),
-            }
-
+            // Read in *|/ operator if exists
             let exp_bin_op = match self.reader.peek() {
                 Some(t) => match &t.token {
-                    Token::Plus => BinOperator::Plus,
-                    Token::Minus => BinOperator::Minus,
                     Token::Mult => BinOperator::Mult,
                     Token::Div => BinOperator::Div,
-                    Token::GreaterThan => BinOperator::GreaterThan,
-                    Token::LessThan => BinOperator::LessThan,
                     _ => return exp,
                 },
                 None => return exp,
             };
-
             self.reader.next();
 
-            let exp_two = match self.reader.next() {
-                Some(t) => match &t.token {
-                    Token::IntLiteral(n) => Expr::IntLiteral(n.clone()),
-                    _ => {
-                        Self::error("expected expression", &t.loc);
-                        panic!();
-                    }
-                },
-                None => {
-                    Self::error("expected expression", &self.reader.eof);
-                    panic!();
-                }
-            };
+            let exp_two = self.handle_factor();
             exp = Expr::BinOp {
                 op: exp_bin_op,
                 e1: Box::new(exp),
                 e2: Box::new(exp_two),
-            };
+            }
         }
+    }
+
+    fn handle_addsub(&mut self) -> Expr {
+        let mut exp = self.handle_muldiv();
+        loop {
+            // Read in +|- operator if exists
+            let exp_bin_op = match self.reader.peek() {
+                Some(t) => match &t.token {
+                    Token::Plus => BinOperator::Plus,
+                    Token::Minus => BinOperator::Minus,
+                    _ => return exp,
+                },
+                None => return exp,
+            };
+            self.reader.next();
+
+            let exp_two = self.handle_muldiv();
+            exp = Expr::BinOp {
+                op: exp_bin_op,
+                e1: Box::new(exp),
+                e2: Box::new(exp_two),
+            }
+        }
+    }
+
+    fn handle_cmp(&mut self) -> Expr {
+        let mut exp = self.handle_addsub();
+        loop {
+            // Read in <|> operator if exists
+            let exp_bin_op = match self.reader.peek() {
+                Some(t) => match &t.token {
+                    Token::LessThan => BinOperator::LessThan,
+                    Token::GreaterThan => BinOperator::GreaterThan,
+                    _ => return exp,
+                },
+                None => return exp,
+            };
+            self.reader.next();
+
+            let exp_two = self.handle_cmp();
+            exp = Expr::BinOp {
+                op: exp_bin_op,
+                e1: Box::new(exp),
+                e2: Box::new(exp_two),
+            }
+        }
+    }
+
+    fn handle_and(&mut self) -> Expr {
+        let mut exp = self.handle_cmp();
+        loop {
+            // Read in && operator if exists
+            match self.reader.peek() {
+                Some(t) => {
+                    if !matches!(&t.token, Token::LogicalAnd) {
+                        return exp;
+                    }
+                }
+                None => return exp,
+            }
+            self.reader.next();
+
+            let exp_two = self.handle_cmp();
+            exp = Expr::BinOp {
+                op: BinOperator::LogicalAnd,
+                e1: Box::new(exp),
+                e2: Box::new(exp_two),
+            }
+        }
+    }
+
+    fn handle_or(&mut self) -> Expr {
+        let mut exp = self.handle_and();
+        loop {
+            // Read in || operator if exists
+            match self.reader.peek() {
+                Some(t) => {
+                    if !matches!(&t.token, Token::LogicalOr) {
+                        return exp;
+                    }
+                }
+                None => return exp,
+            }
+            self.reader.next();
+
+            let exp_two = self.handle_and();
+            exp = Expr::BinOp {
+                op: BinOperator::LogicalOr,
+                e1: Box::new(exp),
+                e2: Box::new(exp_two),
+            }
+        }
+    }
+
+    /// Recursive descent parser for parsing expressions
+    fn handle_expression(&mut self) -> Expr {
+        self.handle_or()
     }
 
     fn handle_var_asgmt_stmt(&mut self) -> Stmt {

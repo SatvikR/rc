@@ -1,6 +1,6 @@
 use std::{fmt, process::exit};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     IntLiteral(i32),
     Identifier(String),
@@ -17,9 +17,11 @@ pub enum Token {
     LogicalOr,
     OpenCurly,
     CloseCurly,
+    OpenParan,
+    CloseParan,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LexedToken {
     pub token: Token,
     pub loc: Loc,
@@ -227,6 +229,8 @@ impl<'a> Lexer<'a> {
             '<' => Some(Token::LessThan),
             '{' => Some(Token::OpenCurly),
             '}' => Some(Token::CloseCurly),
+            '(' => Some(Token::OpenParan),
+            ')' => Some(Token::CloseParan),
             _ => None,
         }
     }
@@ -278,7 +282,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.reader.peek() {
                 Some(c) => {
-                    if c == ' ' || Lexer::is_seperator(c) || Lexer::is_operator(c) {
+                    if c == ' ' || c == ')' || Lexer::is_seperator(c) || Lexer::is_operator(c) {
                         return;
                     }
                     self.token.push(self.reader.next().unwrap());
