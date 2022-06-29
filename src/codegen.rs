@@ -329,6 +329,19 @@ impl<'a> IRGen<'a> {
 
                 self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
             }
+            Stmt::WhileStatement { cond, body } => {
+                let lbl_start = self.ctx.get_next_label();
+                let lbl_out = self.ctx.get_next_label();
+
+                self.ctx.out.ops.push(Op::Lbl(lbl_start.clone()));
+                self.gen_expr(cond);
+                self.ctx.out.ops.push(Op::JmpZero(lbl_out.clone()));
+
+                self.gen_stmt(body);
+                self.ctx.out.ops.push(Op::Jmp(lbl_start.clone()));
+
+                self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
+            }
         }
     }
 

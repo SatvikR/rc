@@ -57,6 +57,10 @@ pub enum Stmt {
         truthy: Box<ParsedStmt>,
         falsy: Option<Box<ParsedStmt>>,
     },
+    WhileStatement {
+        cond: ParsedExpr,
+        body: Box<ParsedStmt>,
+    },
 }
 
 #[derive(Debug)]
@@ -134,7 +138,7 @@ impl<'a> Parser<'a> {
         // Read in the type
         let type_token = self.reader.next().unwrap();
         let decl_type = match type_token.token {
-            Token::I32 => Type::I32,
+            Token::Int => Type::I32,
             _ => panic!("type_token must be a valid type"),
         };
 
@@ -229,8 +233,43 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_neg(&mut self) -> ParsedExpr {
+        let loc;
+        // Read in - if exists
+        match self.reader.peek() {
+            Some(t) => {
+                if !matches!(&t.token, Token::Minus) {
+                    return self.handle_factor();
+                }
+                loc = t.loc.clone();
+            }
+            None => {
+                Self::error(
+                    "expected a ident, number or ( + expression + )",
+                    &self.reader.eof,
+                );
+                panic!();
+            }
+        }
+        self.reader.next();
+
+        let exp = self.handle_factor();
+
+        ParsedExpr {
+            expr: Expr::BinOp {
+                op: BinOperator::Minus,
+                e1: Box::new(ParsedExpr {
+                    expr: Expr::IntLiteral(0),
+                    loc: loc.clone(),
+                }),
+                e2: Box::new(exp),
+            },
+            loc: loc.clone(),
+        }
+    }
+
     fn handle_muldiv(&mut self) -> ParsedExpr {
-        let mut exp = self.handle_factor();
+        let mut exp = self.handle_neg();
         loop {
             // Read in *|/ operator if exists
             let exp_bin_op = match self.reader.peek() {
@@ -243,7 +282,7 @@ impl<'a> Parser<'a> {
             };
             self.reader.next();
 
-            let exp_two = self.handle_factor();
+            let exp_two = self.handle_neg();
             let loc = exp.loc.clone();
             exp = ParsedExpr {
                 expr: Expr::BinOp {
@@ -523,6 +562,38 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_while(&mut self) -> Stmt {
+        self.reader.next();
+
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::OpenParan) {
+                    Self::error("expected '('", &t.loc);
+                    panic!();
+                }
+            }
+            None => (),
+        }
+
+        let cond = self.handle_expression();
+
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::CloseParan) {
+                    Self::error("expected ')'", &t.loc);
+                    panic!();
+                }
+            }
+            None => (),
+        }
+
+        let body = self.parse_stmt();
+        Stmt::WhileStatement {
+            cond: cond,
+            body: Box::new(body),
+        }
+    }
+
     fn parse_stmt(&mut self) -> ParsedStmt {
         let token = match self.reader.peek() {
             Some(t) => t,
@@ -534,10 +605,11 @@ impl<'a> Parser<'a> {
         self.curr_stmt_loc = Some(token.loc.clone());
 
         let stmt = match &token.token {
-            Token::I32 => self.handle_var_decl_stmt(),
+            Token::Int => self.handle_var_decl_stmt(),
             Token::Identifier(_) => self.handle_var_asgmt_stmt(),
             Token::OpenCurly => self.handle_scope(),
             Token::If => self.handle_if(),
+            Token::While => self.handle_while(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();
