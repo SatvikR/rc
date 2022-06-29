@@ -50,6 +50,11 @@ pub enum Stmt {
     Scope {
         stmts: Vec<ParsedStmt>,
     },
+    IfStatement {
+        cond: ParsedExpr,
+        truthy: Box<ParsedStmt>,
+        falsy: Option<Box<ParsedStmt>>,
+    },
 }
 
 #[derive(Debug)]
@@ -435,6 +440,60 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_if(&mut self) -> Stmt {
+        self.reader.next();
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::OpenParan) {
+                    Self::error("expected '('", &t.loc);
+                    panic!();
+                }
+            }
+            None => (),
+        }
+
+        let cond = self.handle_expression();
+
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::CloseParan) {
+                    Self::error("expected ')'", &t.loc);
+                    panic!();
+                }
+            }
+            None => (),
+        }
+
+        let truthy = self.parse_stmt();
+
+        match self.reader.peek() {
+            Some(t) => {
+                if !matches!(&t.token, Token::Else) {
+                    return Stmt::IfStatement {
+                        cond: cond,
+                        truthy: Box::new(truthy),
+                        falsy: None,
+                    };
+                }
+            }
+            None => {
+                return Stmt::IfStatement {
+                    cond: cond,
+                    truthy: Box::new(truthy),
+                    falsy: None,
+                };
+            }
+        }
+        self.reader.next();
+        let falsy = self.parse_stmt();
+
+        Stmt::IfStatement {
+            cond: cond,
+            truthy: Box::new(truthy),
+            falsy: Some(Box::new(falsy)),
+        }
+    }
+
     fn parse_stmt(&mut self) -> ParsedStmt {
         let token = match self.reader.peek() {
             Some(t) => t,
@@ -449,6 +508,7 @@ impl<'a> Parser<'a> {
             Token::I32 => self.handle_var_decl_stmt(),
             Token::Identifier(_) => self.handle_var_asgmt_stmt(),
             Token::OpenCurly => self.handle_scope(),
+            Token::If => self.handle_if(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();

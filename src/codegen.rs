@@ -254,55 +254,83 @@ impl<'a> IRGen<'a> {
         None
     }
 
+    fn gen_stmt(&mut self, s: &ParsedStmt) {
+        match &s.stmt {
+            Stmt::VarDecl { typ, ident, expr } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot perform variable decl outside of function"
+                );
+
+                self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
+                let offset = self.ctx.get_curr_fn_mut().stack_size;
+                self.gen_move(typ, expr, offset);
+
+                self.ctx.get_curr_frame().symbols.insert(
+                    ident.to_string(),
+                    IRSymbol {
+                        typ: typ.clone(),
+                        offset: offset,
+                    },
+                );
+            }
+            Stmt::VarAsgmt { ident, expr } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot perform variable asgmt outside of function"
+                );
+
+                let symbol_option = self.get_symbol(ident);
+                match symbol_option {
+                    None => {
+                        Self::error(&format!("undeclared identifier '{}'", ident), &s.loc);
+                        panic!();
+                    }
+                    _ => (),
+                };
+
+                let symbol = symbol_option.unwrap();
+                let typ = symbol.typ.clone();
+                let offset = symbol.offset;
+                self.gen_move(&typ, expr, offset);
+            }
+            Stmt::Scope { stmts: scope_stmts } => {
+                self.ctx.get_curr_fn_mut().frames.push(IRFrame {
+                    symbols: HashMap::new(),
+                });
+                self.gen_stmts(scope_stmts);
+                self.ctx.get_curr_fn_mut().frames.pop();
+            }
+            Stmt::IfStatement {
+                cond,
+                truthy,
+                falsy,
+            } => {
+                let lbl_truthy = self.ctx.get_next_label();
+                let lbl_falsy = self.ctx.get_next_label();
+                let lbl_out = self.ctx.get_next_label();
+
+                self.gen_expr(cond);
+                self.ctx.out.ops.push(Op::JmpNotZero(lbl_truthy.clone()));
+                self.ctx.out.ops.push(Op::Jmp(lbl_falsy.clone()));
+
+                self.ctx.out.ops.push(Op::Lbl(lbl_truthy.clone()));
+                self.gen_stmt(truthy);
+                self.ctx.out.ops.push(Op::Jmp(lbl_out.clone()));
+
+                self.ctx.out.ops.push(Op::Lbl(lbl_falsy.clone()));
+                if falsy.is_some() {
+                    self.gen_stmt(falsy.as_ref().unwrap());
+                }
+
+                self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
+            }
+        }
+    }
+
     fn gen_stmts(&mut self, stmts: &Vec<ParsedStmt>) {
         for s in stmts.iter() {
-            match &s.stmt {
-                Stmt::VarDecl { typ, ident, expr } => {
-                    assert!(
-                        self.ctx.curr_fn.is_some(),
-                        "cannot perform variable decl outside of function"
-                    );
-
-                    self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
-                    let offset = self.ctx.get_curr_fn_mut().stack_size;
-                    self.gen_move(typ, expr, offset);
-
-                    self.ctx.get_curr_frame().symbols.insert(
-                        ident.to_string(),
-                        IRSymbol {
-                            typ: typ.clone(),
-                            offset: offset,
-                        },
-                    );
-                }
-                Stmt::VarAsgmt { ident, expr } => {
-                    assert!(
-                        self.ctx.curr_fn.is_some(),
-                        "cannot perform variable asgmt outside of function"
-                    );
-
-                    let symbol_option = self.get_symbol(ident);
-                    match symbol_option {
-                        None => {
-                            Self::error(&format!("undeclared identifier '{}'", ident), &s.loc);
-                            panic!();
-                        }
-                        _ => (),
-                    };
-
-                    let symbol = symbol_option.unwrap();
-                    let typ = symbol.typ.clone();
-                    let offset = symbol.offset;
-                    self.gen_move(&typ, expr, offset);
-                }
-                Stmt::Scope { stmts: scope_stmts } => {
-                    self.ctx.get_curr_fn_mut().frames.push(IRFrame {
-                        symbols: HashMap::new(),
-                    });
-                    self.gen_stmts(scope_stmts);
-                    self.ctx.get_curr_fn_mut().frames.pop();
-                }
-            }
+            self.gen_stmt(s);
         }
     }
 

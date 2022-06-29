@@ -4,6 +4,8 @@ use std::{fmt, process::exit};
 pub enum Token {
     IntLiteral(i32),
     Identifier(String),
+    If,
+    Else,
     I32,
     Semicolon,
     Equals,
@@ -265,6 +267,8 @@ impl<'a> Lexer<'a> {
     fn handle_keyword(&self) -> Option<Token> {
         match self.token.as_str() {
             "i32" => Some(Token::I32),
+            "if" => Some(Token::If),
+            "else" => Some(Token::Else),
             _ => None,
         }
     }
