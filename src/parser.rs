@@ -17,6 +17,8 @@ pub enum BinOperator {
     LessThan,
     LogicalAnd,
     LogicalOr,
+    RelationalEquals,
+    RelationalNotEquals,
 }
 
 #[derive(Debug)]
@@ -308,8 +310,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_and(&mut self) -> ParsedExpr {
+    fn handle_rel(&mut self) -> ParsedExpr {
         let mut exp = self.handle_cmp();
+        loop {
+            // Read in ==|!= operator if exists
+            let exp_bin_op = match self.reader.peek() {
+                Some(t) => match &t.token {
+                    Token::RelationalEquals => BinOperator::RelationalEquals,
+                    Token::GreaterThan => BinOperator::RelationalNotEquals,
+                    _ => return exp,
+                },
+                None => return exp,
+            };
+            self.reader.next();
+
+            let exp_two = self.handle_cmp();
+            let loc = exp.loc.clone();
+            exp = ParsedExpr {
+                expr: Expr::BinOp {
+                    op: exp_bin_op,
+                    e1: Box::new(exp),
+                    e2: Box::new(exp_two),
+                },
+                loc: loc,
+            }
+        }
+    }
+
+    fn handle_and(&mut self) -> ParsedExpr {
+        let mut exp = self.handle_rel();
         loop {
             // Read in && operator if exists
             match self.reader.peek() {
@@ -322,7 +351,7 @@ impl<'a> Parser<'a> {
             }
             self.reader.next();
 
-            let exp_two = self.handle_cmp();
+            let exp_two = self.handle_rel();
             let loc = exp.loc.clone();
             exp = ParsedExpr {
                 expr: Expr::BinOp {

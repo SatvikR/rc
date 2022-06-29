@@ -21,6 +21,8 @@ pub enum Token {
     CloseCurly,
     OpenParan,
     CloseParan,
+    RelationalEquals,
+    RelationalNotEquals,
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +257,26 @@ impl<'a> Lexer<'a> {
                     if c == '|' {
                         self.reader.next();
                         return Some(Token::LogicalOr);
+                    }
+                    return None;
+                }
+                None => None,
+            },
+            "=" => match self.reader.peek() {
+                Some(c) => {
+                    if c == '=' {
+                        self.reader.next();
+                        return Some(Token::RelationalEquals);
+                    }
+                    return None;
+                }
+                None => None,
+            },
+            "!" => match self.reader.peek() {
+                Some(c) => {
+                    if c == '=' {
+                        self.reader.next();
+                        return Some(Token::RelationalNotEquals);
                     }
                     return None;
                 }
