@@ -7,7 +7,8 @@ pub enum Token {
     If,
     Else,
     While,
-    Int,
+    Return,
+    I32,
     Semicolon,
     Equals,
     Plus,
@@ -289,10 +290,11 @@ impl<'a> Lexer<'a> {
 
     fn handle_keyword(&self) -> Option<Token> {
         match self.token.as_str() {
-            "i32" => Some(Token::Int),
+            "i32" => Some(Token::I32),
             "if" => Some(Token::If),
             "else" => Some(Token::Else),
             "while" => Some(Token::While),
+            "return" => Some(Token::Return),
             _ => None,
         }
     }
@@ -311,6 +313,7 @@ impl<'a> Lexer<'a> {
             match self.reader.peek() {
                 Some(c) => {
                     if c == ' '
+                        || c == '('
                         || c == ')'
                         || Lexer::is_seperator(c)
                         || Lexer::is_operator(c)

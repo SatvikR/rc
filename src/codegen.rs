@@ -37,6 +37,8 @@ enum Op {
     JmpNotZero(String),
     Jmp(String),
     Lbl(String),
+    Call(String),
+    Ret,
 }
 
 #[derive(Debug)]
@@ -162,6 +164,9 @@ impl<'a> IRGen<'a> {
                 let typ = symbol.typ.clone();
                 let offset = symbol.offset;
                 self.gen_push(&typ, offset);
+            }
+            Expr::Call(ident) => {
+                self.ctx.out.ops.push(Op::Call(String::from(ident)));
             }
             Expr::BinOp { op, e1, e2 } => {
                 // handle logical operators differently
@@ -299,6 +304,10 @@ impl<'a> IRGen<'a> {
                 self.gen_move(&typ, expr, offset);
             }
             Stmt::Scope { stmts: scope_stmts } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot have a scope outside a function"
+                );
                 self.ctx.get_curr_fn_mut().frames.push(IRFrame {
                     symbols: HashMap::new(),
                 });
@@ -310,6 +319,10 @@ impl<'a> IRGen<'a> {
                 truthy,
                 falsy,
             } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot have an if statement outside a function"
+                );
                 let lbl_truthy = self.ctx.get_next_label();
                 let lbl_falsy = self.ctx.get_next_label();
                 let lbl_out = self.ctx.get_next_label();
@@ -330,6 +343,10 @@ impl<'a> IRGen<'a> {
                 self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
             }
             Stmt::WhileStatement { cond, body } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot have a while statement outside a function"
+                );
                 let lbl_start = self.ctx.get_next_label();
                 let lbl_out = self.ctx.get_next_label();
 
@@ -342,6 +359,28 @@ impl<'a> IRGen<'a> {
 
                 self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));
             }
+            Stmt::Function { ident, body } => {
+                assert!(
+                    self.ctx.curr_fn.is_none(),
+                    "cannot define a function inside another function"
+                );
+
+                self.introduce_function(ident);
+                self.gen_stmt(body);
+                self.end_function();
+            }
+            Stmt::ReturnStatement { val } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot return from outside a function"
+                );
+                match val {
+                    Some(e) => self.gen_expr(e),
+                    None => self.ctx.out.ops.push(Op::Push(0)),
+                }
+
+                self.ctx.out.ops.push(Op::Ret);
+            }
         }
     }
 
@@ -352,9 +391,7 @@ impl<'a> IRGen<'a> {
     }
 
     fn gen_prog(&mut self, ast: &ProgramTree) -> &IRProgram {
-        self.introduce_function("main");
         self.gen_stmts(&ast.stmts);
-        self.end_function();
 
         &self.ctx.out
     }
@@ -387,6 +424,12 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    mov rbp, rsp\n"))?;
                 out.write_fmt(format_args!("    sub rsp, {}\n", i))?;
             }
+            Op::EndFn => {
+                out.write_fmt(format_args!(".OUT:\n"))?;
+                out.write_fmt(format_args!("    mov rsp, rbp\n"))?;
+                out.write_fmt(format_args!("    pop rbp\n"))?;
+                out.write_fmt(format_args!("    ret\n"))?;
+            }
             Op::Push(n) => {
                 out.write_fmt(format_args!("    mov rax, {}\n", n))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
@@ -398,11 +441,6 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::Push32(i) => {
                 out.write_fmt(format_args!("    mov eax, DWORD [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
-            }
-            Op::EndFn => {
-                out.write_fmt(format_args!("    mov rsp, rbp\n"))?;
-                out.write_fmt(format_args!("    pop rbp\n"))?;
-                out.write_fmt(format_args!("    ret\n"))?;
             }
             Op::Add => {
                 out.write_fmt(format_args!("    pop rcx\n"))?;
@@ -480,6 +518,14 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             }
             Op::Lbl(l) => {
                 out.write_fmt(format_args!("{}:\n", l))?;
+            }
+            Op::Call(l) => {
+                out.write_fmt(format_args!("    call {}\n", l))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Ret => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    jmp .OUT\n"))?;
             }
         }
     }

@@ -30,6 +30,7 @@ pub enum Expr {
         e2: Box<ParsedExpr>,
     },
     Identifier(String),
+    Call(String), // TODO add arguments in an Vec<Box<ParsedExpr>>
 }
 
 #[derive(Debug)]
@@ -60,6 +61,13 @@ pub enum Stmt {
     WhileStatement {
         cond: ParsedExpr,
         body: Box<ParsedStmt>,
+    },
+    Function {
+        ident: String,
+        body: Box<ParsedStmt>,
+    },
+    ReturnStatement {
+        val: Option<ParsedExpr>,
     },
 }
 
@@ -134,11 +142,11 @@ impl<'a> Parser<'a> {
         exit(1);
     }
 
-    fn handle_var_decl_stmt(&mut self) -> Stmt {
+    fn handle_var_decl_or_fn(&mut self) -> Stmt {
         // Read in the type
         let type_token = self.reader.next().unwrap();
         let decl_type = match type_token.token {
-            Token::Int => Type::I32,
+            Token::I32 => Type::I32,
             _ => panic!("type_token must be a valid type"),
         };
 
@@ -156,13 +164,46 @@ impl<'a> Parser<'a> {
                 panic!();
             }
         };
-
-        // Read in equals sign
+        // Read in equals sign or open paran for a function
         match self.reader.next() {
             Some(t) => match t.token {
                 Token::Equals => (),
+                Token::OpenParan => {
+                    // TODO read args
+                    match self.reader.next() {
+                        Some(t) => {
+                            if !matches!(&t.token, Token::CloseParan) {
+                                Self::error("expected ')'", &t.loc);
+                            }
+                        }
+                        None => {
+                            Self::error("expected ')'", &self.reader.eof);
+                        }
+                    }
+
+                    match self.reader.peek() {
+                        Some(t) => {
+                            if !matches!(&t.token, Token::OpenCurly) {
+                                Self::error("expected '{'", &t.loc);
+                            }
+                        }
+                        None => {
+                            Self::error("expected '{'", &self.reader.eof);
+                        }
+                    }
+
+                    let scope_loc = self.reader.peek().unwrap().loc.clone();
+                    let scope = self.handle_scope();
+                    return Stmt::Function {
+                        ident: ident_token,
+                        body: Box::new(ParsedStmt {
+                            stmt: scope,
+                            loc: scope_loc.clone(),
+                        }),
+                    };
+                }
                 _ => {
-                    Self::error("expected '='", &t.loc);
+                    Self::error("expected '=' or '('", &t.loc);
                 }
             },
             None => {
@@ -214,10 +255,31 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                Token::Identifier(s) => ParsedExpr {
-                    expr: Expr::Identifier(String::from(s)),
-                    loc: t.loc.clone(),
-                },
+                Token::Identifier(s) => {
+                    let ident = String::from(s);
+                    let loc = t.loc.clone();
+
+                    match self.reader.peek() {
+                        Some(t) => {
+                            if matches!(&t.token, Token::OpenParan) {
+                                self.reader.next(); // (
+                                                    // TODO parse arguments
+                                self.reader.next(); // )
+
+                                return ParsedExpr {
+                                    expr: Expr::Call(ident),
+                                    loc: loc.clone(),
+                                };
+                            }
+                        }
+                        None => (),
+                    }
+
+                    ParsedExpr {
+                        expr: Expr::Identifier(ident),
+                        loc: loc.clone(),
+                    }
+                }
                 _ => {
                     Self::error("expected a ident, number or ( + expression + )", &t.loc);
                     panic!();
@@ -594,6 +656,36 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_return(&mut self) -> Stmt {
+        self.reader.next();
+        match self.reader.peek() {
+            Some(t) => {
+                if matches!(&t.token, Token::Semicolon) {
+                    return Stmt::ReturnStatement { val: None };
+                }
+            }
+            None => {
+                Self::error("expected token(s) after return", &self.reader.eof);
+                panic!();
+            }
+        }
+
+        let val = self.handle_expression();
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::Semicolon) {
+                    Self::error("expected semicolon", &t.loc);
+                }
+            }
+            None => {
+                Self::error("expected semicolon", &self.reader.eof);
+                panic!();
+            }
+        }
+
+        Stmt::ReturnStatement { val: Some(val) }
+    }
+
     fn parse_stmt(&mut self) -> ParsedStmt {
         let token = match self.reader.peek() {
             Some(t) => t,
@@ -605,11 +697,12 @@ impl<'a> Parser<'a> {
         self.curr_stmt_loc = Some(token.loc.clone());
 
         let stmt = match &token.token {
-            Token::Int => self.handle_var_decl_stmt(),
+            Token::I32 => self.handle_var_decl_or_fn(),
             Token::Identifier(_) => self.handle_var_asgmt_stmt(),
             Token::OpenCurly => self.handle_scope(),
             Token::If => self.handle_if(),
             Token::While => self.handle_while(),
+            Token::Return => self.handle_return(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();
