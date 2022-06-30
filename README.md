@@ -2,7 +2,11 @@
 
 A C-like programming language implemented in Rust (for now)
 
-## Example: Fibonacci Number
+Compiles to x86-64 instruction set and uses linux syscalls. Expects both `nasm` and `ld` to be in `$PATH`.
+
+## Example
+
+> Calculates the 20th fibonacci number
 
 ```
 i32 fib() {
