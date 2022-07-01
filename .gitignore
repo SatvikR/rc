@@ -1,7 +1,10 @@
 /target
 
 # testing files
-prog.asm
-prog.o
 prog.rc
 prog
+rungdb.sh
+
+*.o
+*.asm
+

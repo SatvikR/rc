@@ -19,6 +19,7 @@ pub enum BinOperator {
     LogicalOr,
     RelationalEquals,
     RelationalNotEquals,
+    LessThanOrEquals,
 }
 
 #[derive(Debug)]
@@ -488,6 +489,7 @@ impl<'a> Parser<'a> {
                 Some(t) => match &t.token {
                     Token::LessThan => BinOperator::LessThan,
                     Token::GreaterThan => BinOperator::GreaterThan,
+                    Token::LessThanOrEquals => BinOperator::LessThanOrEquals,
                     _ => return exp,
                 },
                 None => return exp,
