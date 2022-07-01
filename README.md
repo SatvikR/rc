@@ -9,25 +9,13 @@ Compiles to x86-64 instruction set and uses linux syscalls. Expects both `nasm` 
 > Calculates the 20th fibonacci number
 
 ```
-i32 fib() {
-	i32 calc = 20;
-	i32 prev = 1;
-	i32 curr = 0;
-	i32 i = 1;
-	while (i < calc) {
-		i32 next = 0;
-
-		next = prev + curr;
-		prev = curr;
-		curr = next;
-
-		i = i + 1;
-	}
-	return curr;
+i32 fib(i32 n) {
+	if (n < 1 || n == 1) return n;
+	return fib(n - 1) + fib(n - 2);
 }
 
 i32 main() {
-	i32 x = fib();
+	i32 tenth_fib = fib(10);
 }
 ```
 

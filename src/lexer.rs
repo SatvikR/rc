@@ -10,6 +10,7 @@ pub enum Token {
     Return,
     I32,
     Semicolon,
+    Comma,
     Equals,
     Plus,
     Minus,
@@ -184,7 +185,7 @@ impl<'a> Lexer<'a> {
 
     fn is_seperator(token: char) -> bool {
         match token {
-            ';' | '=' => true,
+            ';' | '=' | '(' | ')' | ',' => true,
             _ => false,
         }
     }
@@ -237,6 +238,7 @@ impl<'a> Lexer<'a> {
             '}' => Some(Token::CloseCurly),
             '(' => Some(Token::OpenParan),
             ')' => Some(Token::CloseParan),
+            ',' => Some(Token::Comma),
             _ => None,
         }
     }
@@ -313,8 +315,6 @@ impl<'a> Lexer<'a> {
             match self.reader.peek() {
                 Some(c) => {
                     if c == ' '
-                        || c == '('
-                        || c == ')'
                         || Lexer::is_seperator(c)
                         || Lexer::is_operator(c)
                         || c.is_ascii_whitespace()

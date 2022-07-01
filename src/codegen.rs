@@ -21,6 +21,8 @@ enum Op {
     PrepFn(u32),
     /// pushing values
     Push(u64),
+    PushArg(u32),
+    PopArg,
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
     Mov32(u32),
     Push32(u32),
@@ -38,6 +40,7 @@ enum Op {
     Jmp(String),
     Lbl(String),
     Call(String),
+    PushCall,
     Ret,
 }
 
@@ -165,8 +168,15 @@ impl<'a> IRGen<'a> {
                 let offset = symbol.offset;
                 self.gen_push(&typ, offset);
             }
-            Expr::Call(ident) => {
+            Expr::Call { ident, args } => {
+                for arg in args.iter().rev() {
+                    self.gen_expr(arg);
+                }
                 self.ctx.out.ops.push(Op::Call(String::from(ident)));
+                for _ in 0..args.len() {
+                    self.ctx.out.ops.push(Op::PopArg);
+                }
+                self.ctx.out.ops.push(Op::PushCall);
             }
             Expr::BinOp { op, e1, e2 } => {
                 // handle logical operators differently
@@ -236,9 +246,9 @@ impl<'a> IRGen<'a> {
     }
 
     fn gen_move(&mut self, typ: &Type, val: &ParsedExpr, offset: u32) {
+        self.gen_expr(val);
         match typ {
             Type::I32 => {
-                self.gen_expr(val);
                 self.ctx.out.ops.push(Op::Mov32(offset));
             }
         }
@@ -303,7 +313,10 @@ impl<'a> IRGen<'a> {
                 let offset = symbol.offset;
                 self.gen_move(&typ, expr, offset);
             }
-            Stmt::Scope { stmts: scope_stmts } => {
+            Stmt::Scope {
+                stmts: scope_stmts,
+                args,
+            } => {
                 assert!(
                     self.ctx.curr_fn.is_some(),
                     "cannot have a scope outside a function"
@@ -311,6 +324,28 @@ impl<'a> IRGen<'a> {
                 self.ctx.get_curr_fn_mut().frames.push(IRFrame {
                     symbols: HashMap::new(),
                 });
+
+                // Check if this is the outermost stack of a function,
+                // in which case, fetch all the arguments.
+                if args.is_some() {
+                    let args = args.as_ref().unwrap();
+                    for (i, arg) in args.iter().enumerate() {
+                        self.ctx.get_curr_fn_mut().stack_size += Self::get_size(&arg.typ);
+                        let offset = self.ctx.get_curr_fn_mut().stack_size;
+
+                        self.ctx.out.ops.push(Op::PushArg(16 + (i as u32) * 8));
+                        self.ctx.out.ops.push(Op::Mov32(offset)); // TODO types
+
+                        self.ctx.get_curr_frame().symbols.insert(
+                            arg.ident.to_string(),
+                            IRSymbol {
+                                typ: arg.typ.clone(),
+                                offset,
+                            },
+                        );
+                    }
+                }
+
                 self.gen_stmts(scope_stmts);
                 self.ctx.get_curr_fn_mut().frames.pop();
             }
@@ -425,7 +460,7 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    sub rsp, {}\n", i))?;
             }
             Op::EndFn => {
-                out.write_fmt(format_args!(".OUT:\n"))?;
+                out.write_fmt(format_args!(".LOUT:\n"))?;
                 out.write_fmt(format_args!("    mov rsp, rbp\n"))?;
                 out.write_fmt(format_args!("    pop rbp\n"))?;
                 out.write_fmt(format_args!("    ret\n"))?;
@@ -433,6 +468,13 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::Push(n) => {
                 out.write_fmt(format_args!("    mov rax, {}\n", n))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::PushArg(i) => {
+                out.write_fmt(format_args!("    mov rax, QWORD [rbp+{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::PopArg => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
             }
             Op::Mov32(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
@@ -521,11 +563,13 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             }
             Op::Call(l) => {
                 out.write_fmt(format_args!("    call {}\n", l))?;
+            }
+            Op::PushCall => {
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Ret => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
-                out.write_fmt(format_args!("    jmp .OUT\n"))?;
+                out.write_fmt(format_args!("    jmp .LOUT\n"))?;
             }
         }
     }
