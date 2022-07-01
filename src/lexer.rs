@@ -27,6 +27,7 @@ pub enum Token {
     RelationalEquals,
     RelationalNotEquals,
     LessThanOrEquals,
+    GreaterThanOrEquals,
 }
 
 #[derive(Debug, Clone)]
@@ -292,6 +293,16 @@ impl<'a> Lexer<'a> {
                     if c == '=' {
                         self.reader.next();
                         return Some(Token::LessThanOrEquals);
+                    }
+                    return None;
+                }
+                None => None,
+            },
+            ">" => match self.reader.peek() {
+                Some(c) => {
+                    if c == '=' {
+                        self.reader.next();
+                        return Some(Token::GreaterThanOrEquals);
                     }
                     return None;
                 }

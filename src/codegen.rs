@@ -34,6 +34,7 @@ enum Op {
     Gt,
     Lt,
     Leq,
+    Geq,
     Eq,
     Neq,
     JmpZero(String),
@@ -235,6 +236,7 @@ impl<'a> IRGen<'a> {
                     BinOperator::RelationalEquals => self.ctx.out.ops.push(Op::Eq),
                     BinOperator::RelationalNotEquals => self.ctx.out.ops.push(Op::Neq),
                     BinOperator::LessThanOrEquals => self.ctx.out.ops.push(Op::Leq),
+                    BinOperator::GreaterThanOrEquals => self.ctx.out.ops.push(Op::Geq),
                     _ => panic!(),
                 }
             }
@@ -534,6 +536,15 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    cmp rax, rcx\n"))?;
                 out.write_fmt(format_args!("    setle al\n"))?;
+                out.write_fmt(format_args!("    and al, 1\n"))?;
+                out.write_fmt(format_args!("    movzx rax, al\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Geq => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    cmp rax, rcx\n"))?;
+                out.write_fmt(format_args!("    setge al\n"))?;
                 out.write_fmt(format_args!("    and al, 1\n"))?;
                 out.write_fmt(format_args!("    movzx rax, al\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;

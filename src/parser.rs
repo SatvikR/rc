@@ -20,6 +20,7 @@ pub enum BinOperator {
     RelationalEquals,
     RelationalNotEquals,
     LessThanOrEquals,
+    GreaterThanOrEquals,
 }
 
 #[derive(Debug)]
@@ -490,6 +491,7 @@ impl<'a> Parser<'a> {
                     Token::LessThan => BinOperator::LessThan,
                     Token::GreaterThan => BinOperator::GreaterThan,
                     Token::LessThanOrEquals => BinOperator::LessThanOrEquals,
+                    Token::GreaterThanOrEquals => BinOperator::GreaterThanOrEquals,
                     _ => return exp,
                 },
                 None => return exp,
