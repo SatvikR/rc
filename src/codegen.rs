@@ -26,6 +26,8 @@ enum Op {
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
     Mov32(u32),
     Push32(u32),
+    Mov8(u32),
+    Push8(u32),
     EndFn,
     Add,
     Sub,
@@ -246,22 +248,33 @@ impl<'a> IRGen<'a> {
     fn get_size(typ: &Type) -> u32 {
         match typ {
             Type::I32 => 4,
+            Type::I8 => 1,
         }
     }
 
-    fn gen_move(&mut self, typ: &Type, val: &ParsedExpr, offset: u32) {
-        self.gen_expr(val);
+    fn gen_mov(&mut self, typ: &Type, offset: u32) {
         match typ {
             Type::I32 => {
                 self.ctx.out.ops.push(Op::Mov32(offset));
             }
+            Type::I8 => {
+                self.ctx.out.ops.push(Op::Mov8(offset));
+            }
         }
+    }
+
+    fn gen_assign(&mut self, typ: &Type, val: &ParsedExpr, offset: u32) {
+        self.gen_expr(val);
+        self.gen_mov(typ, offset);
     }
 
     fn gen_push(&mut self, typ: &Type, offset: u32) {
         match typ {
             Type::I32 => {
                 self.ctx.out.ops.push(Op::Push32(offset));
+            }
+            Type::I8 => {
+                self.ctx.out.ops.push(Op::Push8(offset));
             }
         }
     }
@@ -287,7 +300,7 @@ impl<'a> IRGen<'a> {
 
                 self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
                 let offset = self.ctx.get_curr_fn_mut().stack_size;
-                self.gen_move(typ, expr, offset);
+                self.gen_assign(typ, expr, offset);
 
                 self.ctx.get_curr_frame().symbols.insert(
                     ident.to_string(),
@@ -315,7 +328,7 @@ impl<'a> IRGen<'a> {
                 let symbol = symbol_option.unwrap();
                 let typ = symbol.typ.clone();
                 let offset = symbol.offset;
-                self.gen_move(&typ, expr, offset);
+                self.gen_assign(&typ, expr, offset);
             }
             Stmt::Scope {
                 stmts: scope_stmts,
@@ -338,7 +351,7 @@ impl<'a> IRGen<'a> {
                         let offset = self.ctx.get_curr_fn_mut().stack_size;
 
                         self.ctx.out.ops.push(Op::PushArg(16 + (i as u32) * 8));
-                        self.ctx.out.ops.push(Op::Mov32(offset)); // TODO types
+                        self.gen_mov(&arg.typ, offset);
 
                         self.ctx.get_curr_frame().symbols.insert(
                             arg.ident.to_string(),
@@ -486,6 +499,14 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             }
             Op::Push32(i) => {
                 out.write_fmt(format_args!("    mov eax, DWORD [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Mov8(i) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    mov BYTE [rbp-{}], al\n", i))?;
+            }
+            Op::Push8(i) => {
+                out.write_fmt(format_args!("    mov al, BYTE [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Add => {

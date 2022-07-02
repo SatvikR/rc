@@ -9,6 +9,7 @@ pub enum Token {
     While,
     Return,
     I32,
+    I8,
     Semicolon,
     Comma,
     Equals,
@@ -315,6 +316,7 @@ impl<'a> Lexer<'a> {
     fn handle_keyword(&self) -> Option<Token> {
         match self.token.as_str() {
             "i32" => Some(Token::I32),
+            "i8" => Some(Token::I8),
             "if" => Some(Token::If),
             "else" => Some(Token::Else),
             "while" => Some(Token::While),

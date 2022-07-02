@@ -5,6 +5,7 @@ use crate::lexer::{LexedToken, Loc, Token, Tokens};
 #[derive(Debug, Clone)]
 pub enum Type {
     I32,
+    I8,
 }
 
 #[derive(Debug)]
@@ -155,13 +156,21 @@ impl<'a> Parser<'a> {
         exit(1);
     }
 
+    fn token_to_type(t: &LexedToken) -> Type {
+        match &t.token {
+            Token::I32 => Type::I32,
+            Token::I8 => Type::I8,
+            _ => {
+                Self::error("invalid type", &t.loc);
+                panic!();
+            }
+        }
+    }
+
     fn handle_var_decl_or_fn(&mut self) -> Stmt {
         // Read in the type
         let type_token = self.reader.next().unwrap();
-        let decl_type = match type_token.token {
-            Token::I32 => Type::I32,
-            _ => panic!("type_token must be a valid type"),
-        };
+        let decl_type = Self::token_to_type(type_token);
 
         // Read in the identifier
         let ident_token = match self.reader.next() {
@@ -208,13 +217,7 @@ impl<'a> Parser<'a> {
 
                         // Read in the type
                         let decl_type = match self.reader.next() {
-                            Some(t) => match &t.token {
-                                Token::I32 => Type::I32,
-                                _ => {
-                                    Self::error("expected a valid type", &t.loc);
-                                    panic!();
-                                }
-                            },
+                            Some(t) => Self::token_to_type(t),
                             None => {
                                 Self::error("expected a valid type", &self.reader.eof);
                                 panic!();
@@ -800,7 +803,7 @@ impl<'a> Parser<'a> {
         self.curr_stmt_loc = Some(token.loc.clone());
 
         let stmt = match &token.token {
-            Token::I32 => self.handle_var_decl_or_fn(),
+            Token::I32 | Token::I8 => self.handle_var_decl_or_fn(),
             Token::Identifier(_) => self.handle_var_asgmt_stmt(),
             Token::OpenCurly => self.handle_scope(None),
             Token::If => self.handle_if(),
