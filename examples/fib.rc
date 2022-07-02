@@ -1,0 +1,8 @@
+i32 fib(i32 n) {
+	if (n <= 1) return n;
+	return fib(n - 1) + fib(n - 2);
+}
+
+i32 main() {
+	i32 twentieth_fib = fib(20);
+}

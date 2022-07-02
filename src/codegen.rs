@@ -2,6 +2,7 @@
 // 1. Convert AST to list of operations (Op for short)
 // 2. Convert List of Op's to assembly output
 
+use core::panic;
 use std::{
     collections::HashMap,
     fs::File,
@@ -11,7 +12,7 @@ use std::{
 
 use crate::{
     lexer::Loc,
-    parser::{BinOperator, Expr, ParsedExpr, ParsedStmt, ProgramTree, Stmt, Type},
+    parser::{BinOperator, Expr, ParsedExpr, ParsedStmt, ProgramTree, Stmt, Type, UnaryOp},
 };
 
 /// High-level assembly instructions, a.k.a an intermediate representation
@@ -23,6 +24,7 @@ enum Op {
     Push(u64),
     PushArg(u32),
     PopArg,
+    Lea(u32),
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
     Mov32(u32),
     Push32(u32),
@@ -182,6 +184,29 @@ impl<'a> IRGen<'a> {
                 }
                 self.ctx.out.ops.push(Op::PushCall);
             }
+            Expr::UnaryOp { op, e } => match op {
+                UnaryOp::AddressOf => {
+                    let ident = match &e.expr {
+                        Expr::Identifier(i) => i,
+                        _ => {
+                            Self::error("cannot take address of a non-variable", &e.loc);
+                            panic!();
+                        }
+                    };
+
+                    let sym = match self.get_symbol(ident) {
+                        Some(s) => s,
+                        None => {
+                            Self::error("tried to dereference undeclared identifier", &e.loc);
+                            panic!();
+                        }
+                    };
+
+                    let offset = sym.offset;
+
+                    self.ctx.out.ops.push(Op::Lea(offset));
+                }
+            },
             Expr::BinOp { op, e1, e2 } => {
                 // handle logical operators differently
                 match op {
@@ -465,6 +490,19 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     out.write_all(b"    mov     rax, 60\n")?;
     out.write_all(b"    mov     rdi, 0\n")?;
     out.write_all(b"    syscall\n")?;
+    out.write_all(b"; -- BEGIN SYSCALL INTRINSICS --\n")?;
+    out.write_all(b"SYSCALL_3:\n")?;
+    out.write_all(b"    push rbp\n")?;
+    out.write_all(b"    mov rbp, rsp\n")?;
+    out.write_all(b"    mov rax, [rbp+16]\n")?;
+    out.write_all(b"    mov rdi, [rbp+24]\n")?;
+    out.write_all(b"    mov rsi, [rbp+32]\n")?;
+    out.write_all(b"    mov rdx, [rbp+40]\n")?;
+    out.write_all(b"    syscall\n")?;
+    out.write_all(b"    mov rsp, rbp\n")?;
+    out.write_all(b"    pop rbp\n")?;
+    out.write_all(b"    ret\n")?;
+    out.write_all(b"; -- END SYSCALL INTRINSICS --\n")?;
 
     for op in program.ops.iter() {
         match op {
@@ -492,6 +530,10 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             }
             Op::PopArg => {
                 out.write_fmt(format_args!("    pop rcx\n"))?;
+            }
+            Op::Lea(i) => {
+                out.write_fmt(format_args!("    lea rax, [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Mov32(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;

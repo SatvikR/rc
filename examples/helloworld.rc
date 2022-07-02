@@ -1,0 +1,17 @@
+i32 main() {
+	i8 char_13 = 10;
+	i8 char_12 = 33;
+	i8 char_11 = 100;
+	i8 char_10 = 108;
+	i8 char_9 = 114;
+	i8 char_8 = 111;
+	i8 char_7 = 87;
+	i8 char_6 = 32;
+	i8 char_5 = 44;
+	i8 char_4 = 111;
+	i8 char_3 = 108;
+	i8 char_2 = 108;
+	i8 char_1 = 101;
+	i8 char_0 = 72;
+	i32 out = SYSCALL_3(1, 1, &char_0, 14);
+}

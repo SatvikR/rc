@@ -2,6 +2,8 @@
 
 A C-like programming language implemented in Rust (for now)
 
+> Now with [an official Hello, World program!](https://github.com/SatvikR/rc/blob/main/examples/helloworld.rc)
+
 Compiles to x86-64 instruction set and uses linux syscalls. Expects both `nasm` and `ld` to be in `$PATH`.
 
 ## Example
@@ -26,6 +28,8 @@ The only way to "output" anything right now is to assign the value to a variable
 an external debugger like gdb to check the value of `rax`.
 
 Nonetheless, it is turing complete.
+
+> more examples in the example directory
 
 ## License
 

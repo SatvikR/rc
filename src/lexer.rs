@@ -29,6 +29,7 @@ pub enum Token {
     RelationalNotEquals,
     LessThanOrEquals,
     GreaterThanOrEquals,
+    Ampersand,
 }
 
 #[derive(Debug, Clone)]
@@ -242,6 +243,7 @@ impl<'a> Lexer<'a> {
             '(' => Some(Token::OpenParan),
             ')' => Some(Token::CloseParan),
             ',' => Some(Token::Comma),
+            '&' => Some(Token::Ampersand),
             _ => None,
         }
     }

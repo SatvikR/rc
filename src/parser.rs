@@ -25,12 +25,21 @@ pub enum BinOperator {
 }
 
 #[derive(Debug)]
+pub enum UnaryOp {
+    AddressOf,
+}
+
+#[derive(Debug)]
 pub enum Expr {
     IntLiteral(i32),
     BinOp {
         op: BinOperator,
         e1: Box<ParsedExpr>,
         e2: Box<ParsedExpr>,
+    },
+    UnaryOp {
+        op: UnaryOp,
+        e: Box<ParsedExpr>,
     },
     Identifier(String),
     Call {
@@ -401,7 +410,7 @@ impl<'a> Parser<'a> {
         // Read in - if exists
         match self.reader.peek() {
             Some(t) => {
-                if !matches!(&t.token, Token::Minus) {
+                if !matches!(&t.token, Token::Minus | Token::Ampersand) {
                     return self.handle_factor();
                 }
                 loc = t.loc.clone();
@@ -414,12 +423,12 @@ impl<'a> Parser<'a> {
                 panic!();
             }
         }
-        self.reader.next();
+        let op = self.reader.next().unwrap().clone();
 
         let exp = self.handle_factor();
 
-        ParsedExpr {
-            expr: Expr::BinOp {
+        let op_expr = match op.token {
+            Token::Minus => Expr::BinOp {
                 op: BinOperator::Minus,
                 e1: Box::new(ParsedExpr {
                     expr: Expr::IntLiteral(0),
@@ -427,6 +436,15 @@ impl<'a> Parser<'a> {
                 }),
                 e2: Box::new(exp),
             },
+            Token::Ampersand => Expr::UnaryOp {
+                op: UnaryOp::AddressOf,
+                e: Box::new(exp),
+            },
+            _ => panic!(),
+        };
+
+        ParsedExpr {
+            expr: op_expr,
             loc: loc.clone(),
         }
     }
