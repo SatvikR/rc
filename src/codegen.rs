@@ -540,6 +540,7 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
             }
             Op::Push32(i) => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
                 out.write_fmt(format_args!("    mov eax, DWORD [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
@@ -548,6 +549,7 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    mov BYTE [rbp-{}], al\n", i))?;
             }
             Op::Push8(i) => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
                 out.write_fmt(format_args!("    mov al, BYTE [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
