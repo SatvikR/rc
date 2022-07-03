@@ -224,6 +224,46 @@ impl<'a> Lexer<'a> {
         if Lexer::is_ascii_numeric(self.token.as_bytes()[0] as char) {
             return Some(self.handle_integer_literal());
         }
+
+        if self.token == "'" {
+            let c = match self.reader.next() {
+                Some(c) => match c {
+                    '\\' => match self.reader.next() {
+                        Some(c) => match c {
+                            'n' => '\n',
+                            '\\' => '\\',
+                            _ => {
+                                self.error("unknown escape sequence");
+                                panic!();
+                            }
+                        },
+                        None => {
+                            self.error("expected escape sequence");
+                            panic!();
+                        }
+                    },
+                    _ => c,
+                },
+                None => {
+                    self.error("expected a character literal");
+                    panic!();
+                }
+            };
+
+            match self.reader.next() {
+                Some(c) => {
+                    if c != '\'' {
+                        self.error("missing closing quote in character literal");
+                        panic!();
+                    }
+                }
+                None => {
+                    self.error("missing closing quote in character literal");
+                }
+            }
+
+            return Some(Token::IntLiteral(c as i32));
+        }
         None
     }
 
