@@ -2,7 +2,7 @@ use std::{fmt, process::exit};
 
 #[derive(Debug, Clone)]
 pub enum Token {
-    IntLiteral(i32),
+    IntLiteral(u64),
     Identifier(String),
     If,
     Else,
@@ -211,7 +211,7 @@ impl<'a> Lexer<'a> {
         // read function since it handles things like . differently
         self.read_word();
 
-        match self.token.parse::<i32>() {
+        match self.token.parse::<u64>() {
             Ok(n) => return Token::IntLiteral(n),
             Err(_) => {
                 self.error("error reading int literal");
@@ -263,7 +263,7 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            return Some(Token::IntLiteral(c as i32));
+            return Some(Token::IntLiteral(c as u64));
         }
         None
     }

@@ -31,7 +31,7 @@ pub enum UnaryOp {
 
 #[derive(Debug)]
 pub enum Expr {
-    IntLiteral(i32),
+    IntLiteral(u64),
     BinOp {
         op: BinOperator,
         e1: Box<ParsedExpr>,

@@ -158,7 +158,7 @@ impl<'a> IRGen<'a> {
 
     fn gen_expr(&mut self, e: &ParsedExpr) {
         match &e.expr {
-            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push((*n as u32).into())),
+            Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push(*n)),
             Expr::Identifier(ident) => {
                 let symbol_opt = self.get_symbol(ident);
                 match symbol_opt {
