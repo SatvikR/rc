@@ -80,8 +80,9 @@ impl<'a> SourceFile<'a> {
     }
 
     pub fn get_root(&self) -> &str {
-        let mut spl = self.path.split(".");
-        return spl.next().unwrap();
+        let len_path = self.path.len();
+        let root = &self.path[0..len_path - 3];
+        root
     }
 }
 
