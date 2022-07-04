@@ -724,7 +724,7 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::PushPtr8 => {
                 out.write_fmt(format_args!("    mov rax, 0\n"))?;
                 out.write_fmt(format_args!("    pop rcx\n"))?;
-                out.write_fmt(format_args!("    mov al, DWORD [rcx]\n"))?;
+                out.write_fmt(format_args!("    mov al, BYTE [rcx]\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Add => {

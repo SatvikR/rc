@@ -18,7 +18,7 @@ fn load_src_file(path: &String) -> String {
     let mut src_f = match File::open(path) {
         Ok(f) => f,
         Err(_) => {
-            println!("err opening src file");
+            eprintln!("err opening src file");
             exit(1);
         }
     };
@@ -27,7 +27,7 @@ fn load_src_file(path: &String) -> String {
     match src_f.read_to_string(&mut src_str) {
         Ok(_) => (),
         Err(_) => {
-            println!("err reading src file");
+            eprintln!("err reading src file");
             exit(1);
         }
     }
@@ -54,7 +54,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() != 2 {
-        println!("invalid command line arguments");
+        eprintln!("invalid command line arguments");
         exit(1);
     }
 

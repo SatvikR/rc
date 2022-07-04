@@ -673,7 +673,7 @@ impl<'a> Parser<'a> {
             let exp_bin_op = match self.reader.peek() {
                 Some(t) => match &t.token {
                     Token::RelationalEquals => BinOperator::RelationalEquals,
-                    Token::GreaterThan => BinOperator::RelationalNotEquals,
+                    Token::RelationalNotEquals => BinOperator::RelationalNotEquals,
                     _ => return exp,
                 },
                 None => return exp,
