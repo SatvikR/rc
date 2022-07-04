@@ -6,6 +6,7 @@ use crate::lexer::{LexedToken, Loc, Token, Tokens};
 pub enum Type {
     I32,
     I8,
+    Array { typ: Box<Type>, size: u64 },
 }
 
 #[derive(Debug)]
@@ -46,6 +47,10 @@ pub enum Expr {
         ident: String,
         args: Vec<ParsedExpr>,
     },
+    VarSubscript {
+        ident: String,
+        indices: Vec<ParsedExpr>,
+    },
 }
 
 #[derive(Debug)]
@@ -63,6 +68,10 @@ pub struct Arg {
 
 #[derive(Debug)]
 pub enum Stmt {
+    VarDef {
+        typ: Type,
+        ident: String,
+    },
     VarDecl {
         typ: Type,
         ident: String,
@@ -70,6 +79,11 @@ pub enum Stmt {
     },
     VarAsgmt {
         ident: String,
+        expr: ParsedExpr,
+    },
+    VarSubscriptAsgmt {
+        ident: String,
+        subscripts: Vec<ParsedExpr>,
         expr: ParsedExpr,
     },
     Scope {
@@ -91,6 +105,10 @@ pub enum Stmt {
     },
     ReturnStatement {
         val: Option<ParsedExpr>,
+    },
+    AnonCall {
+        ident: String,
+        args: Vec<ParsedExpr>,
     },
 }
 
@@ -176,11 +194,66 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_array_size(&mut self) -> u64 {
+        self.reader.next();
+        let mut size = 1;
+        loop {
+            match self.reader.next() {
+                Some(t) => match &t.token {
+                    Token::IntLiteral(n) => size *= n,
+                    _ => {
+                        Self::error("cannot have dynamic array sizes", &t.loc);
+                        panic!();
+                    }
+                },
+                None => {
+                    Self::error("expected array size", &self.reader.eof);
+                    panic!();
+                }
+            }
+
+            match self.reader.next() {
+                Some(t) => {
+                    if !matches!(&t.token, Token::CloseSquare) {
+                        Self::error("expected ']'", &t.loc);
+                    }
+                }
+                None => {
+                    Self::error("expected ']'", &self.reader.eof);
+                }
+            }
+
+            match self.reader.peek() {
+                Some(t) => {
+                    if !matches!(&t.token, Token::OpenSquare) {
+                        break;
+                    }
+                    self.reader.next();
+                }
+                None => break,
+            }
+        }
+        size
+    }
+
     fn handle_var_decl_or_fn(&mut self) -> Stmt {
         // Read in the type
         let type_token = self.reader.next().unwrap();
-        let decl_type = Self::token_to_type(type_token);
+        let base_type = Self::token_to_type(type_token);
 
+        let decl_type = match self.reader.peek() {
+            Some(t) => match &t.token {
+                Token::OpenSquare => Type::Array {
+                    typ: Box::new(base_type),
+                    size: self.handle_array_size(),
+                },
+                _ => base_type,
+            },
+            None => {
+                Self::error("expected var decl or fn", &self.reader.eof);
+                panic!();
+            }
+        };
         // Read in the identifier
         let ident_token = match self.reader.next() {
             Some(t) => match &t.token {
@@ -198,8 +271,18 @@ impl<'a> Parser<'a> {
         // Read in equals sign or open paran for a function
         match self.reader.next() {
             Some(t) => match t.token {
+                Token::Semicolon => {
+                    return Stmt::VarDef {
+                        typ: decl_type,
+                        ident: ident_token,
+                    }
+                }
                 Token::Equals => (),
                 Token::OpenParan => {
+                    if matches!(decl_type, Type::Array { .. }) {
+                        Self::error("cannot return array from a function", &t.loc);
+                        panic!();
+                    }
                     let mut args = Vec::new();
                     loop {
                         match self.reader.peek() {
@@ -344,9 +427,9 @@ impl<'a> Parser<'a> {
                     let loc = t.loc.clone();
 
                     match self.reader.peek() {
-                        Some(t) => {
-                            if matches!(&t.token, Token::OpenParan) {
-                                self.reader.next(); // (
+                        Some(t) => match &t.token {
+                            Token::OpenParan => {
+                                self.reader.next();
                                 let mut args = Vec::new();
                                 loop {
                                     match self.reader.peek() {
@@ -374,14 +457,65 @@ impl<'a> Parser<'a> {
                                     let arg = self.handle_expression();
                                     args.push(arg);
                                 }
-                                self.reader.next(); // )
+                                match self.reader.next() {
+                                    Some(t) => match &t.token {
+                                        Token::CloseParan => (),
+                                        _ => {
+                                            Self::error("expected ')'", &t.loc);
+                                            panic!();
+                                        }
+                                    },
+                                    None => {
+                                        Self::error("expected ')'", &self.reader.eof);
+                                        panic!();
+                                    }
+                                }
 
                                 return ParsedExpr {
                                     expr: Expr::Call { ident, args },
                                     loc: loc.clone(),
                                 };
                             }
-                        }
+                            Token::OpenSquare => {
+                                // TODO nested indices
+                                self.reader.next();
+                                let mut subscripts = Vec::new();
+                                loop {
+                                    let idx = self.handle_expression();
+                                    subscripts.push(idx);
+
+                                    match self.reader.next() {
+                                        Some(t) => {
+                                            if !matches!(&t.token, Token::CloseSquare) {
+                                                Self::error("expected ']'", &t.loc);
+                                            }
+                                        }
+                                        None => {
+                                            Self::error("expected ']'", &self.reader.eof);
+                                        }
+                                    }
+
+                                    match self.reader.peek() {
+                                        Some(t) => {
+                                            if !matches!(&t.token, Token::OpenSquare) {
+                                                break;
+                                            }
+                                            self.reader.next();
+                                        }
+                                        None => break,
+                                    }
+                                }
+
+                                return ParsedExpr {
+                                    expr: Expr::VarSubscript {
+                                        ident,
+                                        indices: subscripts,
+                                    },
+                                    loc: loc.clone(),
+                                };
+                            }
+                            _ => (),
+                        },
                         None => (),
                     }
 
@@ -618,7 +752,7 @@ impl<'a> Parser<'a> {
         self.handle_or()
     }
 
-    fn handle_var_asgmt_stmt(&mut self) -> Stmt {
+    fn handle_var_asgmt_or_call(&mut self) -> Stmt {
         // Read in the identifier
         let ident_token = match self.reader.next() {
             Some(t) => match &t.token {
@@ -634,10 +768,132 @@ impl<'a> Parser<'a> {
             }
         };
 
-        // Read in equals sign
         match self.reader.next() {
             Some(t) => match t.token {
                 Token::Equals => (),
+                Token::OpenSquare => {
+                    let mut subscripts = Vec::new();
+                    loop {
+                        let idx = self.handle_expression();
+                        subscripts.push(idx);
+
+                        match self.reader.next() {
+                            Some(t) => {
+                                if !matches!(&t.token, Token::CloseSquare) {
+                                    Self::error("expected ']'", &t.loc);
+                                }
+                            }
+                            None => {
+                                Self::error("expected ']'", &self.reader.eof);
+                            }
+                        }
+
+                        match self.reader.peek() {
+                            Some(t) => {
+                                if !matches!(&t.token, Token::OpenSquare) {
+                                    break;
+                                }
+                                self.reader.next();
+                            }
+                            None => break,
+                        }
+                    }
+
+                    match self.reader.next() {
+                        Some(t) => {
+                            if !matches!(&t.token, Token::Equals) {
+                                Self::error("expected '='", &t.loc);
+                            }
+                        }
+                        None => {
+                            Self::error("expected '='", &self.reader.eof);
+                        }
+                    }
+
+                    // Read in the expression
+                    let decl_expr = self.handle_expression();
+
+                    // Read in semicolon
+                    match self.reader.next() {
+                        Some(t) => match &t.token {
+                            Token::Semicolon => (),
+                            _ => {
+                                Self::error("expected ';'", &t.loc);
+                            }
+                        },
+                        None => {
+                            Self::error("expected ';'", &self.reader.eof);
+                        }
+                    }
+
+                    return Stmt::VarSubscriptAsgmt {
+                        ident: ident_token,
+                        subscripts,
+                        expr: decl_expr,
+                    };
+                }
+                Token::OpenParan => {
+                    let mut args = Vec::new();
+                    loop {
+                        match self.reader.peek() {
+                            Some(t) => {
+                                if matches!(&t.token, Token::CloseParan) {
+                                    break;
+                                }
+                            }
+                            None => Self::error("expected ')'", &self.reader.eof),
+                        }
+
+                        if args.len() > 0 {
+                            match self.reader.next() {
+                                Some(t) => {
+                                    if !matches!(&t.token, Token::Comma) {
+                                        Self::error("expected ','", &t.loc);
+                                    }
+                                }
+                                None => {
+                                    Self::error("expected ','", &self.reader.eof);
+                                }
+                            }
+                        }
+
+                        let arg = self.handle_expression();
+                        args.push(arg);
+                    }
+
+                    match self.reader.next() {
+                        Some(t) => match &t.token {
+                            Token::CloseParan => (),
+                            _ => {
+                                Self::error("expected ')'", &t.loc);
+                                panic!();
+                            }
+                        },
+                        None => {
+                            Self::error("expected ')'", &self.reader.eof);
+                            panic!();
+                        }
+                    }
+
+                    match self.reader.next() {
+                        Some(t) => match &t.token {
+                            Token::Semicolon => (),
+                            _ => {
+                                Self::error("expected ';'", &t.loc);
+                                panic!();
+                            }
+                        },
+                        None => {
+                            Self::error("expected ';'", &self.reader.eof);
+                            panic!();
+                        }
+                    }
+
+                    return Stmt::AnonCall {
+                        ident: ident_token,
+                        args,
+                    };
+                }
                 _ => {
                     Self::error("expected '='", &t.loc);
                 }
@@ -822,7 +1078,7 @@ impl<'a> Parser<'a> {
 
         let stmt = match &token.token {
             Token::I32 | Token::I8 => self.handle_var_decl_or_fn(),
-            Token::Identifier(_) => self.handle_var_asgmt_stmt(),
+            Token::Identifier(_) => self.handle_var_asgmt_or_call(),
             Token::OpenCurly => self.handle_scope(None),
             Token::If => self.handle_if(),
             Token::While => self.handle_while(),

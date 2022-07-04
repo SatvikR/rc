@@ -19,17 +19,22 @@ use crate::{
 #[derive(Debug)]
 enum Op {
     DefFn(String),
-    PrepFn(u32),
+    PrepFn(u64),
     /// pushing values
     Push(u64),
-    PushArg(u32),
+    PushArg(u64),
     PopArg,
-    Lea(u32),
+    PushIdx(u64), // u64 is a size in this case
+    Lea(u64),
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
-    Mov32(u32),
-    Push32(u32),
-    Mov8(u32),
-    Push8(u32),
+    Mov32(u64),
+    Push32(u64),
+    MovPtr32,
+    PushPtr32,
+    Mov8(u64),
+    Push8(u64),
+    MovPtr8,
+    PushPtr8,
     EndFn,
     Add,
     Sub,
@@ -57,7 +62,7 @@ struct IRProgram {
 
 struct IRSymbol {
     typ: Type,
-    offset: u32,
+    offset: u64,
 }
 
 // Stack Frame but more specifically a scope
@@ -68,7 +73,7 @@ struct IRFrame {
 struct IRFn {
     frames: Vec<IRFrame>, // stack of HashSets containing symbols
     prep_loc: usize,
-    stack_size: u32,
+    stack_size: u64,
 }
 
 impl IRFn {
@@ -184,6 +189,33 @@ impl<'a> IRGen<'a> {
                 }
                 self.ctx.out.ops.push(Op::PushCall);
             }
+            Expr::VarSubscript { ident, indices } => {
+                // Push indeces onto stack in reverse order
+                for idx in indices.iter().rev() {
+                    self.gen_expr(idx);
+                }
+
+                // Put the address of the [0][0]...[0] element on the stack
+                let sym = match self.get_symbol(ident) {
+                    Some(s) => s,
+                    None => {
+                        Self::error("tried to dereference undeclared identifier", &e.loc);
+                        panic!();
+                    }
+                };
+
+                let offset = sym.offset;
+                let size = Self::get_size(&sym.typ);
+                let typ = sym.typ.clone();
+                self.ctx.out.ops.push(Op::Lea(offset));
+
+                // Do ptr math on each of the indices sequentially
+                for _ in 0..indices.len() {
+                    self.ctx.out.ops.push(Op::PushIdx(size));
+                }
+
+                self.gen_push_ptr(&typ);
+            }
             Expr::UnaryOp { op, e } => match op {
                 UnaryOp::AddressOf => {
                     let ident = match &e.expr {
@@ -270,14 +302,15 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn get_size(typ: &Type) -> u32 {
+    fn get_size(typ: &Type) -> u64 {
         match typ {
             Type::I32 => 4,
             Type::I8 => 1,
+            Type::Array { typ, size } => *size * Self::get_size(typ),
         }
     }
 
-    fn gen_mov(&mut self, typ: &Type, offset: u32) {
+    fn gen_mov(&mut self, typ: &Type, offset: u64) {
         match typ {
             Type::I32 => {
                 self.ctx.out.ops.push(Op::Mov32(offset));
@@ -285,21 +318,55 @@ impl<'a> IRGen<'a> {
             Type::I8 => {
                 self.ctx.out.ops.push(Op::Mov8(offset));
             }
+            Type::Array { typ, .. } => {
+                self.gen_mov(typ, offset);
+            }
         }
     }
 
-    fn gen_assign(&mut self, typ: &Type, val: &ParsedExpr, offset: u32) {
+    fn gen_mov_ptr(&mut self, typ: &Type) {
+        match typ {
+            Type::I32 => {
+                self.ctx.out.ops.push(Op::MovPtr32);
+            }
+            Type::I8 => {
+                self.ctx.out.ops.push(Op::MovPtr8);
+            }
+            Type::Array { typ, .. } => {
+                self.gen_mov_ptr(typ);
+            }
+        }
+    }
+
+    fn gen_assign(&mut self, typ: &Type, val: &ParsedExpr, offset: u64) {
         self.gen_expr(val);
         self.gen_mov(typ, offset);
     }
 
-    fn gen_push(&mut self, typ: &Type, offset: u32) {
+    fn gen_push(&mut self, typ: &Type, offset: u64) {
         match typ {
             Type::I32 => {
                 self.ctx.out.ops.push(Op::Push32(offset));
             }
             Type::I8 => {
                 self.ctx.out.ops.push(Op::Push8(offset));
+            }
+            Type::Array { typ, .. } => {
+                self.gen_push(typ, offset);
+            }
+        }
+    }
+
+    fn gen_push_ptr(&mut self, typ: &Type) {
+        match typ {
+            Type::I32 => {
+                self.ctx.out.ops.push(Op::PushPtr32);
+            }
+            Type::I8 => {
+                self.ctx.out.ops.push(Op::PushPtr8);
+            }
+            Type::Array { typ, .. } => {
+                self.gen_push_ptr(typ);
             }
         }
     }
@@ -317,6 +384,33 @@ impl<'a> IRGen<'a> {
 
     fn gen_stmt(&mut self, s: &ParsedStmt) {
         match &s.stmt {
+            Stmt::VarDef { typ, ident } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot perform variable def outside of function"
+                );
+
+                self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
+                let offset = self.ctx.get_curr_fn_mut().stack_size;
+
+                // Unwrap the array types.
+                // The IR does not understand arrays internally.
+                let mut base_type = typ;
+                while matches!(base_type, Type::Array { .. }) {
+                    base_type = match base_type {
+                        Type::Array { typ, .. } => typ,
+                        _ => panic!(),
+                    };
+                }
+
+                self.ctx.get_curr_frame().symbols.insert(
+                    ident.to_string(),
+                    IRSymbol {
+                        typ: base_type.clone(),
+                        offset: offset,
+                    },
+                );
+            }
             Stmt::VarDecl { typ, ident, expr } => {
                 assert!(
                     self.ctx.curr_fn.is_some(),
@@ -325,15 +419,26 @@ impl<'a> IRGen<'a> {
 
                 self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
                 let offset = self.ctx.get_curr_fn_mut().stack_size;
-                self.gen_assign(typ, expr, offset);
+
+                // Unwrap the array types.
+                // The IR does not understand arrays internally.
+                let mut base_type = typ;
+                while matches!(base_type, Type::Array { .. }) {
+                    base_type = match base_type {
+                        Type::Array { typ, .. } => typ,
+                        _ => panic!(),
+                    };
+                }
 
                 self.ctx.get_curr_frame().symbols.insert(
                     ident.to_string(),
                     IRSymbol {
-                        typ: typ.clone(),
+                        typ: base_type.clone(),
                         offset: offset,
                     },
                 );
+
+                self.gen_assign(base_type, expr, offset);
             }
             Stmt::VarAsgmt { ident, expr } => {
                 assert!(
@@ -355,6 +460,38 @@ impl<'a> IRGen<'a> {
                 let offset = symbol.offset;
                 self.gen_assign(&typ, expr, offset);
             }
+            Stmt::VarSubscriptAsgmt {
+                ident,
+                subscripts,
+                expr,
+            } => {
+                self.gen_expr(expr);
+
+                for idx in subscripts.iter().rev() {
+                    self.gen_expr(idx);
+                }
+
+                // Put the address of the [0][0]...[0] element on the stack
+                let sym = match self.get_symbol(ident) {
+                    Some(s) => s,
+                    None => {
+                        Self::error("tried to dereference undeclared identifier", &expr.loc);
+                        panic!();
+                    }
+                };
+
+                let offset = sym.offset;
+                let size = Self::get_size(&sym.typ);
+                let typ = sym.typ.clone();
+                self.ctx.out.ops.push(Op::Lea(offset));
+
+                // Do ptr math on each of the indices sequentially
+                for _ in 0..subscripts.len() {
+                    self.ctx.out.ops.push(Op::PushIdx(size));
+                }
+
+                self.gen_mov_ptr(&typ);
+            }
             Stmt::Scope {
                 stmts: scope_stmts,
                 args,
@@ -375,7 +512,7 @@ impl<'a> IRGen<'a> {
                         self.ctx.get_curr_fn_mut().stack_size += Self::get_size(&arg.typ);
                         let offset = self.ctx.get_curr_fn_mut().stack_size;
 
-                        self.ctx.out.ops.push(Op::PushArg(16 + (i as u32) * 8));
+                        self.ctx.out.ops.push(Op::PushArg(16 + (i as u64) * 8));
                         self.gen_mov(&arg.typ, offset);
 
                         self.ctx.get_curr_frame().symbols.insert(
@@ -390,6 +527,15 @@ impl<'a> IRGen<'a> {
 
                 self.gen_stmts(scope_stmts);
                 self.ctx.get_curr_fn_mut().frames.pop();
+            }
+            Stmt::AnonCall { ident, args } => {
+                for arg in args.iter().rev() {
+                    self.gen_expr(arg);
+                }
+                self.ctx.out.ops.push(Op::Call(String::from(ident)));
+                for _ in 0..args.len() {
+                    self.ctx.out.ops.push(Op::PopArg);
+                }
             }
             Stmt::IfStatement {
                 cond,
@@ -531,6 +677,12 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::PopArg => {
                 out.write_fmt(format_args!("    pop rcx\n"))?;
             }
+            Op::PushIdx(i) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    lea rax, [rax+rcx*{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
             Op::Lea(i) => {
                 out.write_fmt(format_args!("    lea rax, [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
@@ -544,6 +696,17 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    mov eax, DWORD [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
+            Op::MovPtr32 => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov DWORD [rax], ecx\n"))?;
+            }
+            Op::PushPtr32 => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov eax, DWORD [rcx]\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
             Op::Mov8(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    mov BYTE [rbp-{}], al\n", i))?;
@@ -551,6 +714,17 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::Push8(i) => {
                 out.write_fmt(format_args!("    mov rax, 0\n"))?;
                 out.write_fmt(format_args!("    mov al, BYTE [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::MovPtr8 => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov BYTE [rax], cl\n"))?;
+            }
+            Op::PushPtr8 => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov al, DWORD [rcx]\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Add => {

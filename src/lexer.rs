@@ -25,6 +25,8 @@ pub enum Token {
     CloseCurly,
     OpenParan,
     CloseParan,
+    OpenSquare,
+    CloseSquare,
     RelationalEquals,
     RelationalNotEquals,
     LessThanOrEquals,
@@ -190,7 +192,7 @@ impl<'a> Lexer<'a> {
 
     fn is_seperator(token: char) -> bool {
         match token {
-            ';' | '=' | '(' | ')' | ',' => true,
+            ';' | '=' | '(' | ')' | ',' | '[' | ']' => true,
             _ => false,
         }
     }
@@ -283,6 +285,8 @@ impl<'a> Lexer<'a> {
             '}' => Some(Token::CloseCurly),
             '(' => Some(Token::OpenParan),
             ')' => Some(Token::CloseParan),
+            '[' => Some(Token::OpenSquare),
+            ']' => Some(Token::CloseSquare),
             ',' => Some(Token::Comma),
             '&' => Some(Token::Ampersand),
             _ => None,

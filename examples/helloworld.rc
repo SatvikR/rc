@@ -1,18 +1,19 @@
 i32 main() {
-	i8 char_13 = '\n';
-	i8 char_12 = '!';
-	i8 char_11 = 'd';
-	i8 char_10 = 'l';
-	i8 char_9 = 'r';
-	i8 char_8 = 'o';
-	i8 char_7 = 'W';
-	i8 char_6 = ' ';
-	i8 char_5 = ',';
-	i8 char_4 = 'o';
-	i8 char_3 = 'l';
-	i8 char_2 = 'l';
-	i8 char_1 = 'e';
-	i8 char_0 = 'H';
+	i8[14] msg;
+	msg[0] = 'H';
+	msg[1] = 'e';
+	msg[2] = 'l';
+	msg[3] = 'l';
+	msg[4] = 'o';
+	msg[5] = ',';
+	msg[6] = ' ';
+	msg[7] = 'W';
+	msg[8] = 'o';
+	msg[9] = 'r';
+	msg[10] = 'l';
+	msg[11] = 'd';
+	msg[12] = '!';
+	msg[13] = '\n';
 
-	i32 out = SYSCALL_3(1, 1, &char_0, 14);
+	SYSCALL_3(1, 1, &msg, 14);
 }
