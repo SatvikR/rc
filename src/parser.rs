@@ -194,13 +194,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_array_size(&mut self) -> u64 {
+    fn handle_array(&mut self, base_type: &Type) -> Type {
+        let mut sizes = Vec::new();
+
         self.reader.next();
-        let mut size = 1;
         loop {
             match self.reader.next() {
                 Some(t) => match &t.token {
-                    Token::IntLiteral(n) => size *= n,
+                    Token::IntLiteral(n) => {
+                        sizes.push(*n);
+                    }
                     _ => {
                         Self::error("cannot have dynamic array sizes", &t.loc);
                         panic!();
@@ -233,7 +236,17 @@ impl<'a> Parser<'a> {
                 None => break,
             }
         }
-        size
+
+        let mut typ = base_type.clone();
+
+        for size in sizes.iter().rev() {
+            typ = Type::Array {
+                typ: Box::new(typ.clone()),
+                size: size.clone(),
+            };
+        }
+
+        typ
     }
 
     fn handle_var_decl_or_fn(&mut self) -> Stmt {
@@ -243,10 +256,7 @@ impl<'a> Parser<'a> {
 
         let decl_type = match self.reader.peek() {
             Some(t) => match &t.token {
-                Token::OpenSquare => Type::Array {
-                    typ: Box::new(base_type),
-                    size: self.handle_array_size(),
-                },
+                Token::OpenSquare => self.handle_array(&base_type),
                 _ => base_type,
             },
             None => {

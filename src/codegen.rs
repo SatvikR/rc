@@ -205,16 +205,22 @@ impl<'a> IRGen<'a> {
                 };
 
                 let offset = sym.offset;
-                let size = Self::get_size(&sym.typ);
-                let typ = sym.typ.clone();
+                let mut curr_typ = sym.typ.clone();
                 self.ctx.out.ops.push(Op::Lea(offset));
 
                 // Do ptr math on each of the indices sequentially
                 for _ in 0..indices.len() {
-                    self.ctx.out.ops.push(Op::PushIdx(size));
+                    match &curr_typ {
+                        Type::Array { typ, .. } => {
+                            let inner_size = Self::get_size(&typ);
+                            self.ctx.out.ops.push(Op::PushIdx(inner_size));
+                            curr_typ = *typ.clone();
+                        }
+                        _ => Self::error("cannot subscript a non-array", &e.loc),
+                    }
                 }
 
-                self.gen_push_ptr(&typ);
+                self.gen_push_ptr(&curr_typ);
             }
             Expr::UnaryOp { op, e } => match op {
                 UnaryOp::AddressOf => {
@@ -393,20 +399,10 @@ impl<'a> IRGen<'a> {
                 self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
                 let offset = self.ctx.get_curr_fn_mut().stack_size;
 
-                // Unwrap the array types.
-                // The IR does not understand arrays internally.
-                let mut base_type = typ;
-                while matches!(base_type, Type::Array { .. }) {
-                    base_type = match base_type {
-                        Type::Array { typ, .. } => typ,
-                        _ => panic!(),
-                    };
-                }
-
                 self.ctx.get_curr_frame().symbols.insert(
                     ident.to_string(),
                     IRSymbol {
-                        typ: base_type.clone(),
+                        typ: typ.clone(),
                         offset: offset,
                     },
                 );
@@ -420,25 +416,15 @@ impl<'a> IRGen<'a> {
                 self.ctx.get_curr_fn_mut().stack_size += Self::get_size(typ);
                 let offset = self.ctx.get_curr_fn_mut().stack_size;
 
-                // Unwrap the array types.
-                // The IR does not understand arrays internally.
-                let mut base_type = typ;
-                while matches!(base_type, Type::Array { .. }) {
-                    base_type = match base_type {
-                        Type::Array { typ, .. } => typ,
-                        _ => panic!(),
-                    };
-                }
-
                 self.ctx.get_curr_frame().symbols.insert(
                     ident.to_string(),
                     IRSymbol {
-                        typ: base_type.clone(),
+                        typ: typ.clone(),
                         offset: offset,
                     },
                 );
 
-                self.gen_assign(base_type, expr, offset);
+                self.gen_assign(typ, expr, offset);
             }
             Stmt::VarAsgmt { ident, expr } => {
                 assert!(
@@ -481,16 +467,22 @@ impl<'a> IRGen<'a> {
                 };
 
                 let offset = sym.offset;
-                let size = Self::get_size(&sym.typ);
-                let typ = sym.typ.clone();
+                let mut curr_typ = sym.typ.clone();
                 self.ctx.out.ops.push(Op::Lea(offset));
 
                 // Do ptr math on each of the indices sequentially
                 for _ in 0..subscripts.len() {
-                    self.ctx.out.ops.push(Op::PushIdx(size));
+                    match &curr_typ {
+                        Type::Array { typ, .. } => {
+                            let inner_size = Self::get_size(&typ);
+                            self.ctx.out.ops.push(Op::PushIdx(inner_size));
+                            curr_typ = *typ.clone();
+                        }
+                        _ => Self::error("cannot subscript a non-array", &s.loc),
+                    }
                 }
 
-                self.gen_mov_ptr(&typ);
+                self.gen_mov_ptr(&curr_typ);
             }
             Stmt::Scope {
                 stmts: scope_stmts,
@@ -680,7 +672,9 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::PushIdx(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    pop rcx\n"))?;
-                out.write_fmt(format_args!("    lea rax, [rax+rcx*{}]\n", i))?;
+                out.write_fmt(format_args!("    imul rcx, {}\n", i))?;
+                out.write_fmt(format_args!("    add rax, rcx\n"))?;
+                out.write_fmt(format_args!("    lea rax, [rax]\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Lea(i) => {
