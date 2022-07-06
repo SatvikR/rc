@@ -8,11 +8,11 @@ use std::{
     process::{exit, Command},
 };
 
-use codegen::generate_x86_64;
-use lexer::Lexer;
-use parser::Parser;
-
-use crate::lexer::SourceFile;
+use crate::{
+    codegen::generate_x86_64,
+    lexer::{Lexer, SourceFile},
+    parser::Parser,
+};
 
 fn load_src_file(path: &String) -> String {
     let mut src_f = match File::open(path) {
