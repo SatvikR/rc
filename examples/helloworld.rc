@@ -1,3 +1,4 @@
 i32 main() {
 	SYSCALL_3(1, 1, "Hello, World!\n", 14);
+	return 0;
 }

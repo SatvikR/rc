@@ -18,6 +18,7 @@ i32 fib(i32 n) {
 
 i32 main() {
 	i32 twentieth_fib = fib(20);
+	return 0;
 }
 ```
 
