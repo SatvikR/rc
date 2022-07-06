@@ -24,7 +24,8 @@ enum Op {
     Push(u64),
     PushArg(u64),
     PopArg,
-    PushIdx(u64), // u64 is a size in this case
+    PushIdx(u64), // u64 is a size
+    PushStr(u64), // u64 is a string index
     Lea(u64),
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
     Mov32(u64),
@@ -58,6 +59,7 @@ enum Op {
 #[derive(Debug)]
 struct IRProgram {
     ops: Vec<Op>,
+    strs: Vec<String>,
 }
 
 struct IRSymbol {
@@ -93,7 +95,10 @@ impl IRGenCtx {
     fn new() -> Self {
         Self {
             curr_fn: None,
-            out: IRProgram { ops: Vec::new() },
+            out: IRProgram {
+                ops: Vec::new(),
+                strs: Vec::new(),
+            },
             label: 0,
         }
     }
@@ -129,6 +134,11 @@ impl<'a> IRGen<'a> {
     fn error(error: &str, loc: &Loc) {
         eprintln!("[ERR_CODEGEN] {}: {}", loc, error);
         exit(1);
+    }
+
+    fn register_string(&mut self, str: &String) -> u64 {
+        self.ctx.out.strs.push(String::from(str));
+        (self.ctx.out.strs.len() as u64) - 1
     }
 
     fn introduce_function(&mut self, name: &str) {
@@ -221,6 +231,10 @@ impl<'a> IRGen<'a> {
                 }
 
                 self.gen_push_ptr(&curr_typ);
+            }
+            Expr::AnonString(s) => {
+                let str_idx = self.register_string(s);
+                self.ctx.out.ops.push(Op::PushStr(str_idx));
             }
             Expr::UnaryOp { op, e } => match op {
                 UnaryOp::AddressOf => {
@@ -388,6 +402,31 @@ impl<'a> IRGen<'a> {
         None
     }
 
+    fn gen_str_init(&mut self, offset: u64, expr: &ParsedExpr) {
+        self.gen_expr(expr);
+        let str_idx = (self.ctx.out.strs.len() - 1) as u64;
+
+        let raw_string = match &expr.expr {
+            Expr::AnonString(s) => s,
+            _ => panic!(),
+        };
+
+        for i in 0..raw_string.len() {
+            self.ctx.out.ops.push(Op::PushPtr8);
+            self.ctx.out.ops.push(Op::Mov8(offset - (i as u64)));
+
+            self.ctx.out.ops.push(Op::PushStr(str_idx));
+            self.ctx.out.ops.push(Op::Push(i as u64 + 1));
+            self.ctx.out.ops.push(Op::Add);
+        }
+
+        self.ctx.out.ops.push(Op::PushPtr8);
+        self.ctx
+            .out
+            .ops
+            .push(Op::Mov8(offset - (raw_string.len() as u64)));
+    }
+
     fn gen_stmt(&mut self, s: &ParsedStmt) {
         match &s.stmt {
             Stmt::VarDef { typ, ident } => {
@@ -424,7 +463,11 @@ impl<'a> IRGen<'a> {
                     },
                 );
 
-                self.gen_assign(typ, expr, offset);
+                if (matches!(typ, Type::Array { .. }) && matches!(expr.expr, Expr::AnonString(_))) {
+                    self.gen_str_init(offset, expr);
+                } else {
+                    self.gen_assign(&typ, expr, offset);
+                }
             }
             Stmt::VarAsgmt { ident, expr } => {
                 assert!(
@@ -444,7 +487,12 @@ impl<'a> IRGen<'a> {
                 let symbol = symbol_option.unwrap();
                 let typ = symbol.typ.clone();
                 let offset = symbol.offset;
-                self.gen_assign(&typ, expr, offset);
+
+                if (matches!(typ, Type::Array { .. }) && matches!(expr.expr, Expr::AnonString(_))) {
+                    self.gen_str_init(offset, expr);
+                } else {
+                    self.gen_assign(&typ, expr, offset);
+                }
             }
             Stmt::VarSubscriptAsgmt {
                 ident,
@@ -620,6 +668,16 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     let f = File::create(path)?;
     let mut out = BufWriter::new(f);
 
+    out.write_all(b"section .data\n")?;
+
+    for (i, s) in program.strs.iter().enumerate() {
+        out.write_fmt(format_args!("    __str{}: db ", i))?;
+        for b in s.as_bytes().iter() {
+            out.write_fmt(format_args!("{},", b))?;
+        }
+        out.write_fmt(format_args!("0\n"))?; // Null terminator
+    }
+
     out.write_all(b"section .text\n")?;
     out.write_all(b"    global _start\n")?;
     out.write_all(b"_start:\n")?;
@@ -641,7 +699,6 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
     out.write_all(b"    pop rbp\n")?;
     out.write_all(b"    ret\n")?;
     out.write_all(b"; -- END SYSCALL INTRINSICS --\n")?;
-
     for op in program.ops.iter() {
         match op {
             Op::DefFn(s) => {
@@ -675,6 +732,10 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    imul rcx, {}\n", i))?;
                 out.write_fmt(format_args!("    add rax, rcx\n"))?;
                 out.write_fmt(format_args!("    lea rax, [rax]\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::PushStr(i) => {
+                out.write_fmt(format_args!("    mov rax, __str{}\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Lea(i) => {

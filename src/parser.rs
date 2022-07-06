@@ -51,6 +51,7 @@ pub enum Expr {
         ident: String,
         indices: Vec<ParsedExpr>,
     },
+    AnonString(String),
 }
 
 #[derive(Debug)]
@@ -432,6 +433,10 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
+                Token::StringLiteral(s) => ParsedExpr {
+                    expr: Expr::AnonString(String::from(s)),
+                    loc: t.loc.clone(),
+                },
                 Token::Identifier(s) => {
                     let ident = String::from(s);
                     let loc = t.loc.clone();

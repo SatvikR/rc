@@ -3,6 +3,7 @@ use std::{fmt, process::exit};
 #[derive(Debug, Clone)]
 pub enum Token {
     IntLiteral(u64),
+    StringLiteral(String),
     Identifier(String),
     If,
     Else,
@@ -222,52 +223,90 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn translate_escape(&self, c: char) -> char {
+        match c {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '0' => '\0',
+            '\\' => '\\',
+            _ => {
+                self.error("unknown escape sequence");
+                panic!();
+            }
+        }
+    }
+
     fn handle_literal(&mut self) -> Option<Token> {
         // is the token the beginning of a literal
         if Lexer::is_ascii_numeric(self.token.as_bytes()[0] as char) {
             return Some(self.handle_integer_literal());
         }
 
-        if self.token == "'" {
-            let c = match self.reader.next() {
-                Some(c) => match c {
-                    '\\' => match self.reader.next() {
-                        Some(c) => match c {
-                            'n' => '\n',
-                            '\\' => '\\',
-                            _ => {
-                                self.error("unknown escape sequence");
+        let token_str = self.token.as_str();
+        match token_str {
+            "'" => {
+                let c = match self.reader.next() {
+                    Some(c) => match c {
+                        '\\' => match self.reader.next() {
+                            Some(c) => match c {
+                                '\'' => '\'',
+                                _ => self.translate_escape(c),
+                            },
+                            None => {
+                                self.error("expected escape sequence");
                                 panic!();
                             }
                         },
-                        None => {
-                            self.error("expected escape sequence");
-                            panic!();
-                        }
+                        _ => c,
                     },
-                    _ => c,
-                },
-                None => {
-                    self.error("expected a character literal");
-                    panic!();
-                }
-            };
-
-            match self.reader.next() {
-                Some(c) => {
-                    if c != '\'' {
-                        self.error("missing closing quote in character literal");
+                    None => {
+                        self.error("expected a character literal");
                         panic!();
                     }
+                };
+
+                match self.reader.next() {
+                    Some(c) => {
+                        if c != '\'' {
+                            self.error("missing closing quote in character literal");
+                            panic!();
+                        }
+                    }
+                    None => {
+                        self.error("missing closing quote in character literal");
+                    }
                 }
-                None => {
-                    self.error("missing closing quote in character literal");
+
+                return Some(Token::IntLiteral(c as u64));
+            }
+            "\"" => {
+                let mut buf = Vec::new();
+                loop {
+                    match self.reader.next() {
+                        Some(c) => match c {
+                            '\\' => match self.reader.next() {
+                                Some(c) => match c {
+                                    '"' => buf.push('"'),
+                                    _ => buf.push(self.translate_escape(c)),
+                                },
+                                None => {
+                                    self.error("expected escape sequence");
+                                    panic!();
+                                }
+                            },
+                            '"' => return Some(Token::StringLiteral(buf.into_iter().collect())),
+                            _ => buf.push(c),
+                        },
+                        None => {
+                            self.error("expected '\"'");
+                            panic!();
+                        }
+                    }
                 }
             }
-
-            return Some(Token::IntLiteral(c as u64));
+            _ => return None,
         }
-        None
     }
 
     /// Return a token if the source string is a seperator.
