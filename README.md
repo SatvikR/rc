@@ -22,8 +22,7 @@ i32 main() {
 }
 ```
 
-The language is **extremeley** minimal right now. There are no strings, characters,
-standard library, etc.
+The language is **extremeley** minimal right now.
 
 The only way to "output" anything right now is to assign the value to a variable, and use
 an external debugger like gdb to check the value of `rax`.
