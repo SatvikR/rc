@@ -24,8 +24,8 @@ i32 main() {
 
 The language is **extremeley** minimal right now.
 
-The only way to "output" anything right now is to assign the value to a variable, and use
-an external debugger like gdb to check the value of `rax`.
+The only way to "output" anything right now is to use the syscall intrinsics as used in the hello world example.
+
 
 Nonetheless, it is turing complete.
 
