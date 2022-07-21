@@ -28,14 +28,22 @@ enum Op {
     PushStr(u64), // u64 is a string index
     Lea(u64),
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
-    Mov32(u64),
-    Push32(u64),
-    MovPtr32,
-    PushPtr32,
     Mov8(u64),
     Push8(u64),
     MovPtr8,
     PushPtr8,
+    Mov16(u64),
+    Push16(u64),
+    MovPtr16,
+    PushPtr16,
+    Mov32(u64),
+    Push32(u64),
+    MovPtr32,
+    PushPtr32,
+    Mov64(u64),
+    Push64(u64),
+    MovPtr64,
+    PushPtr64,
     EndFn,
     Add,
     Sub,
@@ -324,19 +332,27 @@ impl<'a> IRGen<'a> {
 
     fn get_size(typ: &Type) -> u64 {
         match typ {
-            Type::I32 => 4,
-            Type::I8 => 1,
+            Type::U8 | Type::I8 => 1,
+            Type::U16 | Type::I16 => 2,
+            Type::U32 | Type::I32 => 4,
+            Type::U64 | Type::I64 => 8,
             Type::Array { typ, size } => *size * Self::get_size(typ),
         }
     }
 
     fn gen_mov(&mut self, typ: &Type, offset: u64) {
         match typ {
-            Type::I32 => {
+            Type::U8 | Type::I8 => {
+                self.ctx.out.ops.push(Op::Mov8(offset));
+            }
+            Type::U16 | Type::I16 => {
+                self.ctx.out.ops.push(Op::Mov16(offset));
+            }
+            Type::U32 | Type::I32 => {
                 self.ctx.out.ops.push(Op::Mov32(offset));
             }
-            Type::I8 => {
-                self.ctx.out.ops.push(Op::Mov8(offset));
+            Type::U64 | Type::I64 => {
+                self.ctx.out.ops.push(Op::Mov64(offset));
             }
             Type::Array { typ, .. } => {
                 self.gen_mov(typ, offset);
@@ -346,11 +362,17 @@ impl<'a> IRGen<'a> {
 
     fn gen_mov_ptr(&mut self, typ: &Type) {
         match typ {
-            Type::I32 => {
+            Type::U8 | Type::I8 => {
+                self.ctx.out.ops.push(Op::MovPtr8);
+            }
+            Type::U16 | Type::I16 => {
+                self.ctx.out.ops.push(Op::MovPtr16);
+            }
+            Type::U32 | Type::I32 => {
                 self.ctx.out.ops.push(Op::MovPtr32);
             }
-            Type::I8 => {
-                self.ctx.out.ops.push(Op::MovPtr8);
+            Type::U64 | Type::I64 => {
+                self.ctx.out.ops.push(Op::MovPtr64);
             }
             Type::Array { typ, .. } => {
                 self.gen_mov_ptr(typ);
@@ -365,11 +387,17 @@ impl<'a> IRGen<'a> {
 
     fn gen_push(&mut self, typ: &Type, offset: u64) {
         match typ {
-            Type::I32 => {
+            Type::U8 | Type::I8 => {
+                self.ctx.out.ops.push(Op::Push8(offset));
+            }
+            Type::U16 | Type::I16 => {
+                self.ctx.out.ops.push(Op::Push16(offset));
+            }
+            Type::U32 | Type::I32 => {
                 self.ctx.out.ops.push(Op::Push32(offset));
             }
-            Type::I8 => {
-                self.ctx.out.ops.push(Op::Push8(offset));
+            Type::U64 | Type::I64 => {
+                self.ctx.out.ops.push(Op::Push64(offset));
             }
             Type::Array { typ, .. } => {
                 self.gen_push(typ, offset);
@@ -379,11 +407,17 @@ impl<'a> IRGen<'a> {
 
     fn gen_push_ptr(&mut self, typ: &Type) {
         match typ {
-            Type::I32 => {
+            Type::U8 | Type::I8 => {
+                self.ctx.out.ops.push(Op::PushPtr8);
+            }
+            Type::U16 | Type::I16 => {
+                self.ctx.out.ops.push(Op::PushPtr16);
+            }
+            Type::U32 | Type::I32 => {
                 self.ctx.out.ops.push(Op::PushPtr32);
             }
-            Type::I8 => {
-                self.ctx.out.ops.push(Op::PushPtr8);
+            Type::U64 | Type::I64 => {
+                self.ctx.out.ops.push(Op::PushPtr64);
             }
             Type::Array { typ, .. } => {
                 self.gen_push_ptr(typ);
@@ -808,6 +842,46 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    lea rax, [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
+            Op::Mov8(i) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    mov BYTE [rbp-{}], al\n", i))?;
+            }
+            Op::Push8(i) => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
+                out.write_fmt(format_args!("    mov al, BYTE [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::MovPtr8 => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov BYTE [rax], cl\n"))?;
+            }
+            Op::PushPtr8 => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov al, BYTE [rcx]\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Mov16(i) => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    mov WORD [rbp-{}], ax\n", i))?;
+            }
+            Op::Push16(i) => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
+                out.write_fmt(format_args!("    mov ax, WORD [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::MovPtr16 => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov WORD [rax], cx\n"))?;
+            }
+            Op::PushPtr16 => {
+                out.write_fmt(format_args!("    mov rax, 0\n"))?;
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    mov ax, WORD [rcx]\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
             Op::Mov32(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    mov DWORD [rbp-{}], eax\n", i))?;
@@ -828,24 +902,24 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    mov eax, DWORD [rcx]\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
-            Op::Mov8(i) => {
+            Op::Mov64(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
-                out.write_fmt(format_args!("    mov BYTE [rbp-{}], al\n", i))?;
+                out.write_fmt(format_args!("    mov QWORD [rbp-{}], rax\n", i))?;
             }
-            Op::Push8(i) => {
+            Op::Push64(i) => {
                 out.write_fmt(format_args!("    mov rax, 0\n"))?;
-                out.write_fmt(format_args!("    mov al, BYTE [rbp-{}]\n", i))?;
+                out.write_fmt(format_args!("    mov rax, QWORD [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
-            Op::MovPtr8 => {
+            Op::MovPtr64 => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    pop rcx\n"))?;
-                out.write_fmt(format_args!("    mov BYTE [rax], cl\n"))?;
+                out.write_fmt(format_args!("    mov QWORD [rax], rax\n"))?;
             }
-            Op::PushPtr8 => {
+            Op::PushPtr64 => {
                 out.write_fmt(format_args!("    mov rax, 0\n"))?;
                 out.write_fmt(format_args!("    pop rcx\n"))?;
-                out.write_fmt(format_args!("    mov al, BYTE [rcx]\n"))?;
+                out.write_fmt(format_args!("    mov rax, QWORD [rcx]\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Add => {

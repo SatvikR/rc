@@ -26,9 +26,6 @@ The language is **extremeley** minimal right now.
 
 The only way to "output" anything right now is to use the syscall intrinsics as used in the hello world example.
 
-
-Nonetheless, it is turing complete.
-
 > more examples in the example directory
 
 ## License

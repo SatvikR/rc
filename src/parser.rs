@@ -4,8 +4,14 @@ use crate::lexer::{LexedToken, Loc, Token, Tokens};
 
 #[derive(Debug, Clone)]
 pub enum Type {
-    I32,
+    U8,
     I8,
+    U16,
+    I16,
+    U32,
+    I32,
+    U64,
+    I64,
     Array { typ: Box<Type>, size: u64 },
 }
 
@@ -186,8 +192,14 @@ impl<'a> Parser<'a> {
 
     fn token_to_type(t: &LexedToken) -> Type {
         match &t.token {
-            Token::I32 => Type::I32,
+            Token::U8 => Type::U8,
             Token::I8 => Type::I8,
+            Token::U16 => Type::U16,
+            Token::I16 => Type::I16,
+            Token::U32 => Type::U32,
+            Token::I32 => Type::I32,
+            Token::U64 => Type::U64,
+            Token::I64 => Type::I64,
             _ => {
                 Self::error("invalid type", &t.loc);
                 panic!();
@@ -1092,7 +1104,14 @@ impl<'a> Parser<'a> {
         self.curr_stmt_loc = Some(token.loc.clone());
 
         let stmt = match &token.token {
-            Token::I32 | Token::I8 => self.handle_var_decl_or_fn(),
+            Token::U8
+            | Token::I8
+            | Token::U16
+            | Token::I16
+            | Token::U32
+            | Token::I32
+            | Token::U64
+            | Token::I64 => self.handle_var_decl_or_fn(),
             Token::Identifier(_) => self.handle_var_asgmt_or_call(),
             Token::OpenCurly => self.handle_scope(None),
             Token::If => self.handle_if(),
