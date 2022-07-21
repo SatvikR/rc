@@ -446,6 +446,52 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn handle_comment(&mut self) -> bool {
+        match self.token.chars().nth(0) {
+            Some(s) => match s {
+                '/' => match self.reader.peek() {
+                    Some(c) => match c {
+                        '*' => {
+                            // Keep reading bytes until a */
+                            self.reader.next();
+
+                            loop {
+                                let next = match self.reader.next() {
+                                    Some(c) => c,
+                                    None => {
+                                        self.error("exepcted '*/'");
+                                        panic!();
+                                    }
+                                };
+
+                                if next == '*' {
+                                    match self.reader.peek() {
+                                        Some(c) => match c {
+                                            '/' => {
+                                                self.reader.next();
+                                                return true;
+                                            }
+                                            _ => (),
+                                        },
+                                        None => {
+                                            self.error("exepcted '*/'");
+                                            panic!();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => (),
+                    },
+                    None => (),
+                },
+                _ => (),
+            },
+            None => (),
+        }
+        false
+    }
+
     fn handle_word(&mut self) -> Option<Token> {
         self.read_word();
 
@@ -486,6 +532,10 @@ impl<'a> Lexer<'a> {
             }
 
             if self.token.as_bytes()[0].is_ascii_whitespace() {
+                continue;
+            }
+
+            if self.handle_comment() {
                 continue;
             }
 
