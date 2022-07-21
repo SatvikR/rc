@@ -27,6 +27,7 @@ enum Op {
     PushIdx(u64), // u64 is a size
     PushStr(u64), // u64 is a string index
     Lea(u64),
+    Deref,
     /// value is the stack offset for the (Mov|Push)(8|16|32|64) Ops (for variables)
     Mov8(u64),
     Push8(u64),
@@ -265,6 +266,10 @@ impl<'a> IRGen<'a> {
                     let offset = sym.offset;
 
                     self.ctx.out.ops.push(Op::Lea(offset));
+                }
+                UnaryOp::Deref => {
+                    self.gen_expr(e);
+                    self.ctx.out.ops.push(Op::Deref);
                 }
             },
             Expr::BinOp { op, e1, e2 } => {
@@ -841,6 +846,10 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::Lea(i) => {
                 out.write_fmt(format_args!("    lea rax, [rbp-{}]\n", i))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Deref => {
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    push QWORD [rax]\n"))?;
             }
             Op::Mov8(i) => {
                 out.write_fmt(format_args!("    pop rax\n"))?;

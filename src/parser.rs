@@ -34,6 +34,7 @@ pub enum BinOperator {
 #[derive(Debug)]
 pub enum UnaryOp {
     AddressOf,
+    Deref,
 }
 
 #[derive(Debug)]
@@ -571,7 +572,7 @@ impl<'a> Parser<'a> {
         // Read in - if exists
         match self.reader.peek() {
             Some(t) => {
-                if !matches!(&t.token, Token::Minus | Token::Ampersand) {
+                if !matches!(&t.token, Token::Minus | Token::Ampersand | Token::Mult) {
                     return self.handle_factor();
                 }
                 loc = t.loc.clone();
@@ -599,6 +600,10 @@ impl<'a> Parser<'a> {
             },
             Token::Ampersand => Expr::UnaryOp {
                 op: UnaryOp::AddressOf,
+                e: Box::new(exp),
+            },
+            Token::Mult => Expr::UnaryOp {
+                op: UnaryOp::Deref,
                 e: Box::new(exp),
             },
             _ => panic!(),
