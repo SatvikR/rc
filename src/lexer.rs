@@ -1,4 +1,4 @@
-use std::{fmt, process::exit};
+use std::{fmt, fs::File, io::Read, process::exit};
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -39,6 +39,7 @@ pub enum Token {
     LessThanOrEquals,
     GreaterThanOrEquals,
     Ampersand,
+    Import,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +74,27 @@ impl Tokens {
     pub fn get_eof(&self) -> Loc {
         self.eof.as_ref().unwrap().clone()
     }
+}
+
+pub fn load_src_file(path: &String) -> String {
+    let mut src_f = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("err opening src file");
+            exit(1);
+        }
+    };
+
+    let mut src_str = String::new();
+    match src_f.read_to_string(&mut src_str) {
+        Ok(_) => (),
+        Err(_) => {
+            eprintln!("err reading src file");
+            exit(1);
+        }
+    }
+
+    return src_str;
 }
 
 pub struct SourceFile<'a> {
@@ -419,6 +441,7 @@ impl<'a> Lexer<'a> {
             "else" => Some(Token::Else),
             "while" => Some(Token::While),
             "return" => Some(Token::Return),
+            "import" => Some(Token::Import),
             _ => None,
         }
     }

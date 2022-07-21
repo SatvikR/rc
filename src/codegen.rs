@@ -11,8 +11,8 @@ use std::{
 };
 
 use crate::{
-    lexer::Loc,
-    parser::{BinOperator, Expr, ParsedExpr, ParsedStmt, ProgramTree, Stmt, Type, UnaryOp},
+    lexer::{load_src_file, Lexer, Loc, SourceFile},
+    parser::{BinOperator, Expr, ParsedExpr, ParsedStmt, Parser, ProgramTree, Stmt, Type, UnaryOp},
 };
 
 /// High-level assembly instructions, a.k.a an intermediate representation
@@ -468,6 +468,25 @@ impl<'a> IRGen<'a> {
 
     fn gen_stmt(&mut self, s: &ParsedStmt) {
         match &s.stmt {
+            Stmt::Import(src) => {
+                // TODO allow non stdlib imports
+                let src_str = load_src_file(&format!("stdlib/{}", src));
+
+                let src_buf = src_str.as_bytes();
+                let src_file = &SourceFile::new(String::from(src), src_buf);
+
+                let mut lexer = Lexer::new(src_file);
+                let tokens = lexer.lex();
+
+                let mut parser = Parser::new(tokens);
+                let parsed_program = parser.parse();
+
+                let mut ctx = IRGenCtx::new();
+                let mut ir_gen = IRGen::new(&mut ctx);
+                let program = ir_gen.gen_prog(parsed_program);
+
+                self.ctx.out.ops.append(&mut program.ops);
+            }
             Stmt::VarDef { typ, ident } => {
                 assert!(
                     self.ctx.curr_fn.is_some(),
@@ -692,10 +711,10 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn gen_prog(&mut self, ast: &ProgramTree) -> &IRProgram {
+    fn gen_prog(&mut self, ast: &ProgramTree) -> &mut IRProgram {
         self.gen_stmts(&ast.stmts);
 
-        &self.ctx.out
+        &mut self.ctx.out
     }
 }
 

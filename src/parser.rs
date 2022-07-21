@@ -76,6 +76,7 @@ pub struct Arg {
 
 #[derive(Debug)]
 pub enum Stmt {
+    Import(String),
     VarDef {
         typ: Type,
         ident: String,
@@ -1098,6 +1099,25 @@ impl<'a> Parser<'a> {
         Stmt::ReturnStatement { val: Some(val) }
     }
 
+    fn handle_import(&mut self) -> Stmt {
+        self.reader.next();
+        let import_file = match self.reader.next() {
+            Some(t) => match &t.token {
+                Token::StringLiteral(s) => s,
+                _ => {
+                    Self::error("expected a string", &t.loc);
+                    panic!();
+                }
+            },
+            None => {
+                Self::error("expected a string", &self.reader.eof);
+                panic!();
+            }
+        };
+
+        Stmt::Import(String::from(import_file))
+    }
+
     fn parse_stmt(&mut self) -> ParsedStmt {
         let token = match self.reader.peek() {
             Some(t) => t,
@@ -1122,6 +1142,7 @@ impl<'a> Parser<'a> {
             Token::If => self.handle_if(),
             Token::While => self.handle_while(),
             Token::Return => self.handle_return(),
+            Token::Import => self.handle_import(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();

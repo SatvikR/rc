@@ -1,4 +1,6 @@
+import "core.rc"
+
 i32 main() {
-	SYSCALL_3(1, 1, "Hello, World!\n", 14);
+	puts("Hello, World!\n");
 	return 0;
 }

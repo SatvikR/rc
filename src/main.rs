@@ -3,37 +3,17 @@ mod lexer;
 mod parser;
 use std::{
     env,
-    fs::File,
-    io::{self, Read, Write},
+    io::{self, Write},
     process::{exit, Command},
 };
+
+use lexer::load_src_file;
 
 use crate::{
     codegen::generate_x86_64,
     lexer::{Lexer, SourceFile},
     parser::Parser,
 };
-
-fn load_src_file(path: &String) -> String {
-    let mut src_f = match File::open(path) {
-        Ok(f) => f,
-        Err(_) => {
-            eprintln!("err opening src file");
-            exit(1);
-        }
-    };
-
-    let mut src_str = String::new();
-    match src_f.read_to_string(&mut src_str) {
-        Ok(_) => (),
-        Err(_) => {
-            eprintln!("err reading src file");
-            exit(1);
-        }
-    }
-
-    return src_str;
-}
 
 fn cmd_and_log(cmd: &str) {
     let output = Command::new("sh")

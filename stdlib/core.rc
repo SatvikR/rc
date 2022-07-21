@@ -1,0 +1,15 @@
+u64 write(i32 fd, ptr64 buf, u64 count) {
+	return SYSCALL_3(1, fd, buf, count);
+}
+
+u64 puts(ptr64 str) {
+	ptr64 c = str;
+	u64 size = 0;
+
+	while (*c != 0) {
+		size = size + 1;
+		c = c + 1;
+	}
+
+	return write(1, str, size);
+}
