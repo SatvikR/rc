@@ -468,6 +468,12 @@ impl<'a> IRGen<'a> {
 
     fn gen_stmt(&mut self, s: &ParsedStmt) {
         match &s.stmt {
+            Stmt::DerefAsgmt { ptr, expr } => {
+                self.gen_expr(expr);
+                self.gen_expr(ptr);
+                println!("{:?}", expr);
+                self.ctx.out.ops.push(Op::MovPtr64);
+            }
             Stmt::Import(src) => {
                 // TODO allow non stdlib imports
                 let src_str = load_src_file(&format!("stdlib/{}", src));
@@ -942,7 +948,7 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
             Op::MovPtr64 => {
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    pop rcx\n"))?;
-                out.write_fmt(format_args!("    mov QWORD [rax], rax\n"))?;
+                out.write_fmt(format_args!("    mov QWORD [rax], rcx\n"))?;
             }
             Op::PushPtr64 => {
                 out.write_fmt(format_args!("    mov rax, 0\n"))?;
