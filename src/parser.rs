@@ -119,6 +119,7 @@ pub enum Stmt {
     ReturnStatement {
         val: Option<ParsedExpr>,
     },
+    BreakStatement,
     AnonCall {
         ident: String,
         args: Vec<ParsedExpr>,
@@ -1140,6 +1141,22 @@ impl<'a> Parser<'a> {
         Stmt::Import(String::from(import_file))
     }
 
+    fn handle_break(&mut self) -> Stmt {
+        self.reader.next();
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::Semicolon) {
+                    Self::error("expected semicolon", &t.loc);
+                }
+            }
+            None => {
+                Self::error("expected semicolon", &self.reader.eof);
+                panic!();
+            }
+        }
+        Stmt::BreakStatement
+    }
+
     fn parse_stmt(&mut self) -> ParsedStmt {
         let token = match self.reader.peek() {
             Some(t) => t,
@@ -1165,6 +1182,7 @@ impl<'a> Parser<'a> {
             Token::While => self.handle_while(),
             Token::Return => self.handle_return(),
             Token::Import => self.handle_import(),
+            Token::Break => self.handle_break(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();

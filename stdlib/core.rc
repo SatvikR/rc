@@ -14,18 +14,17 @@ u64 strlen(ptr64 str) {
 	u64 size = 0;
 	while (1) {
 		i8 c => p;
-		if (c == 0) {
-			return size;
-		}
+		if (c == 0) break;
+
 		size = size + 1;
 		p = p + 1;
 	}
+	return size;
 }
 
 /* Writes a string to stdout. */
 u64 puts(ptr64 str) {
-	u64 size = strlen(str);
-	return write(1, str, size);
+	return write(1, str, strlen(str));
 }
 
 /* Writes a character to stdout */

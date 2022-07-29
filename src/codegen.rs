@@ -91,7 +91,8 @@ struct IRFrame {
 }
 
 struct IRFn {
-    frames: Vec<IRFrame>, // stack of HashSets containing symbols
+    frames: Vec<IRFrame>,      // stack of HashSets containing symbols
+    break_frames: Vec<String>, // stack of Strings (labels) for break statements
     prep_loc: usize,
     stack_size: u64,
 }
@@ -166,11 +167,9 @@ impl<'a> IRGen<'a> {
 
         self.ctx.curr_fn = Some(IRFn {
             frames: Vec::new(),
+            break_frames: Vec::new(),
             prep_loc: self.ctx.out.ops.len() - 1,
             stack_size: 0,
-        });
-        self.ctx.get_curr_fn_mut().frames.push(IRFrame {
-            symbols: HashMap::new(),
         });
     }
 
@@ -495,6 +494,17 @@ impl<'a> IRGen<'a> {
 
     fn gen_stmt(&mut self, s: &ParsedStmt) {
         match &s.stmt {
+            Stmt::BreakStatement => {
+                assert!(
+                    self.ctx.get_curr_fn().break_frames.len() > 0,
+                    "cannot break from outside of a loop"
+                );
+
+                let lbl_idx = self.ctx.get_curr_fn().break_frames.len() - 1;
+                let lbl = self.ctx.get_curr_fn().break_frames[lbl_idx].clone();
+
+                self.ctx.out.ops.push(Op::Jmp(lbl));
+            }
             Stmt::DerefVarDecl { typ, ident, ptr } => {
                 assert!(
                     self.ctx.curr_fn.is_some(),
@@ -724,7 +734,13 @@ impl<'a> IRGen<'a> {
                 self.gen_expr(cond);
                 self.ctx.out.ops.push(Op::JmpZero(lbl_out.clone()));
 
+                self.ctx
+                    .get_curr_fn_mut()
+                    .break_frames
+                    .push(lbl_out.clone());
                 self.gen_stmt(body);
+                self.ctx.get_curr_fn_mut().break_frames.pop();
+
                 self.ctx.out.ops.push(Op::Jmp(lbl_start.clone()));
 
                 self.ctx.out.ops.push(Op::Lbl(lbl_out.clone()));

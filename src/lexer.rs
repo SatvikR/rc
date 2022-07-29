@@ -9,6 +9,7 @@ pub enum Token {
     Else,
     While,
     Return,
+    Break,
     U8,
     I8,
     U16,
@@ -445,6 +446,7 @@ impl<'a> Lexer<'a> {
             "else" => Some(Token::Else),
             "while" => Some(Token::While),
             "return" => Some(Token::Return),
+            "break" => Some(Token::Break),
             "import" => Some(Token::Import),
             _ => None,
         }
