@@ -34,7 +34,6 @@ pub enum BinOperator {
 #[derive(Debug)]
 pub enum UnaryOp {
     AddressOf,
-    Deprecated,
 }
 
 #[derive(Debug)]
@@ -88,10 +87,6 @@ pub enum Stmt {
     },
     VarAsgmt {
         ident: String,
-        expr: ParsedExpr,
-    },
-    DeprecatedDerefAsgmt {
-        ptr: ParsedExpr,
         expr: ParsedExpr,
     },
     DerefVarDecl {
@@ -634,10 +629,6 @@ impl<'a> Parser<'a> {
                 op: UnaryOp::AddressOf,
                 e: Box::new(exp),
             },
-            Token::Mult => Expr::UnaryOp {
-                op: UnaryOp::Deprecated,
-                e: Box::new(exp),
-            },
             _ => panic!(),
         };
 
@@ -1149,35 +1140,6 @@ impl<'a> Parser<'a> {
         Stmt::Import(String::from(import_file))
     }
 
-    fn handle_deref_asgmt(&mut self) -> Stmt {
-        self.reader.next();
-
-        let ptr = self.handle_expression();
-        match self.reader.next() {
-            Some(t) => {
-                if !matches!(&t.token, Token::Equals) {
-                    Self::error("expected '='", &t.loc);
-                    panic!();
-                }
-            }
-            None => (),
-        }
-
-        let expr = self.handle_expression();
-
-        match self.reader.next() {
-            Some(t) => {
-                if !matches!(&t.token, Token::Semicolon) {
-                    Self::error("expected ';'", &t.loc);
-                    panic!();
-                }
-            }
-            None => (),
-        }
-
-        Stmt::DeprecatedDerefAsgmt { ptr, expr }
-    }
-
     fn parse_stmt(&mut self) -> ParsedStmt {
         let token = match self.reader.peek() {
             Some(t) => t,
@@ -1203,7 +1165,6 @@ impl<'a> Parser<'a> {
             Token::While => self.handle_while(),
             Token::Return => self.handle_return(),
             Token::Import => self.handle_import(),
-            Token::Mult => self.handle_deref_asgmt(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();
