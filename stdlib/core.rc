@@ -1,15 +1,34 @@
+/* Wraps the read syscall. */
+u64 read(i32 fd, ptr64 buf, u64 count) {
+	return SYSCALL_3(0, fd, buf, count);
+}
+
+/* Wraps the write syscall. */
 u64 write(i32 fd, ptr64 buf, u64 count) {
 	return SYSCALL_3(1, fd, buf, count);
 }
 
-u64 puts(ptr64 str) {
-	ptr64 c = str;
+/* Counts the length of a string. */
+u64 strlen(ptr64 str) {
+	ptr64 p = str;
 	u64 size = 0;
-
-	while (*c != 0) {
+	while (1) {
+		i8 c => p;
+		if (c == 0) {
+			return size;
+		}
 		size = size + 1;
-		c = c + 1;
+		p = p + 1;
 	}
+}
 
+/* Writes a string to stdout. */
+u64 puts(ptr64 str) {
+	u64 size = strlen(str);
 	return write(1, str, size);
+}
+
+/* Writes a character to stdout */
+u64 putc(i8 char) {
+	return write(1, &char, 1);
 }

@@ -40,6 +40,7 @@ pub enum Token {
     GreaterThanOrEquals,
     Ampersand,
     Import,
+    Arrow,
 }
 
 #[derive(Debug, Clone)]
@@ -388,6 +389,9 @@ impl<'a> Lexer<'a> {
                     if c == '=' {
                         self.reader.next();
                         return Some(Token::RelationalEquals);
+                    } else if c == '>' {
+                        self.reader.next();
+                        return Some(Token::Arrow);
                     }
                     return None;
                 }

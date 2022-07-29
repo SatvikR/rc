@@ -34,7 +34,7 @@ pub enum BinOperator {
 #[derive(Debug)]
 pub enum UnaryOp {
     AddressOf,
-    Deref,
+    Deprecated,
 }
 
 #[derive(Debug)]
@@ -90,9 +90,14 @@ pub enum Stmt {
         ident: String,
         expr: ParsedExpr,
     },
-    DerefAsgmt {
+    DeprecatedDerefAsgmt {
         ptr: ParsedExpr,
         expr: ParsedExpr,
+    },
+    DerefVarDecl {
+        typ: Type,
+        ident: String,
+        ptr: ParsedExpr,
     },
     VarSubscriptAsgmt {
         ident: String,
@@ -297,7 +302,7 @@ impl<'a> Parser<'a> {
                 panic!();
             }
         };
-        // Read in equals sign or open paran for a function
+        // Read in equals sign or open paran for a function or arrow for deref assign
         match self.reader.next() {
             Some(t) => match t.token {
                 Token::Semicolon => {
@@ -307,6 +312,28 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Token::Equals => (),
+                Token::Arrow => {
+                    let decl_expr = self.handle_expression();
+
+                    // Read in semicolon
+                    match self.reader.next() {
+                        Some(t) => match &t.token {
+                            Token::Semicolon => (),
+                            _ => {
+                                Self::error("expected ';'", &t.loc);
+                            }
+                        },
+                        None => {
+                            Self::error("expected ';'", &self.reader.eof);
+                        }
+                    }
+
+                    return Stmt::DerefVarDecl {
+                        typ: decl_type,
+                        ident: ident_token,
+                        ptr: decl_expr,
+                    };
+                }
                 Token::OpenParan => {
                     if matches!(decl_type, Type::Array { .. }) {
                         Self::error("cannot return array from a function", &t.loc);
@@ -608,7 +635,7 @@ impl<'a> Parser<'a> {
                 e: Box::new(exp),
             },
             Token::Mult => Expr::UnaryOp {
-                op: UnaryOp::Deref,
+                op: UnaryOp::Deprecated,
                 e: Box::new(exp),
             },
             _ => panic!(),
@@ -1148,7 +1175,7 @@ impl<'a> Parser<'a> {
             None => (),
         }
 
-        Stmt::DerefAsgmt { ptr, expr }
+        Stmt::DeprecatedDerefAsgmt { ptr, expr }
     }
 
     fn parse_stmt(&mut self) -> ParsedStmt {

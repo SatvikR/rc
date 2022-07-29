@@ -71,9 +71,19 @@ struct IRProgram {
     strs: Vec<String>,
 }
 
+#[derive(Debug, Copy, Clone)]
+enum IROffset {
+    Local(u64),
+    /// This is not "extern" in the traditional C sense. For a local variable,
+    /// the u64 is an offset from rbp, which points to the data of the variable.
+    /// For extern, the u64 is still an offset rbp, but instead holds a pointer.
+    /// This is the mechanism by which typed pointers are facilitated.
+    Extern(u64),
+}
+
 struct IRSymbol {
     typ: Type,
-    offset: u64,
+    offset: IROffset,
 }
 
 // Stack Frame but more specifically a scope
@@ -225,7 +235,10 @@ impl<'a> IRGen<'a> {
 
                 let offset = sym.offset;
                 let mut curr_typ = sym.typ.clone();
-                self.ctx.out.ops.push(Op::Lea(offset));
+                match offset {
+                    IROffset::Local(off) => self.ctx.out.ops.push(Op::Lea(off)),
+                    IROffset::Extern(off) => self.ctx.out.ops.push(Op::Push64(off)),
+                }
 
                 // Do ptr math on each of the indices sequentially
                 for _ in 0..indices.len() {
@@ -264,10 +277,12 @@ impl<'a> IRGen<'a> {
                     };
 
                     let offset = sym.offset;
-
-                    self.ctx.out.ops.push(Op::Lea(offset));
+                    match offset {
+                        IROffset::Local(off) => self.ctx.out.ops.push(Op::Lea(off)),
+                        IROffset::Extern(off) => self.ctx.out.ops.push(Op::Push64(off)),
+                    }
                 }
-                UnaryOp::Deref => {
+                UnaryOp::Deprecated => {
                     self.gen_expr(e);
                     self.ctx.out.ops.push(Op::Deref);
                 }
@@ -345,22 +360,28 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn gen_mov(&mut self, typ: &Type, offset: u64) {
-        match typ {
-            Type::U8 | Type::I8 => {
-                self.ctx.out.ops.push(Op::Mov8(offset));
-            }
-            Type::U16 | Type::I16 => {
-                self.ctx.out.ops.push(Op::Mov16(offset));
-            }
-            Type::U32 | Type::I32 => {
-                self.ctx.out.ops.push(Op::Mov32(offset));
-            }
-            Type::U64 | Type::I64 => {
-                self.ctx.out.ops.push(Op::Mov64(offset));
-            }
-            Type::Array { typ, .. } => {
-                self.gen_mov(typ, offset);
+    fn gen_mov(&mut self, typ: &Type, offset: IROffset) {
+        match offset {
+            IROffset::Local(off) => match typ {
+                Type::U8 | Type::I8 => {
+                    self.ctx.out.ops.push(Op::Mov8(off));
+                }
+                Type::U16 | Type::I16 => {
+                    self.ctx.out.ops.push(Op::Mov16(off));
+                }
+                Type::U32 | Type::I32 => {
+                    self.ctx.out.ops.push(Op::Mov32(off));
+                }
+                Type::U64 | Type::I64 => {
+                    self.ctx.out.ops.push(Op::Mov64(off));
+                }
+                Type::Array { typ, .. } => {
+                    self.gen_mov(typ, offset);
+                }
+            },
+            IROffset::Extern(off) => {
+                self.ctx.out.ops.push(Op::Push64(off));
+                self.gen_mov_ptr(typ);
             }
         }
     }
@@ -385,27 +406,33 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn gen_assign(&mut self, typ: &Type, val: &ParsedExpr, offset: u64) {
+    fn gen_assign(&mut self, typ: &Type, val: &ParsedExpr, offset: IROffset) {
         self.gen_expr(val);
         self.gen_mov(typ, offset);
     }
 
-    fn gen_push(&mut self, typ: &Type, offset: u64) {
-        match typ {
-            Type::U8 | Type::I8 => {
-                self.ctx.out.ops.push(Op::Push8(offset));
-            }
-            Type::U16 | Type::I16 => {
-                self.ctx.out.ops.push(Op::Push16(offset));
-            }
-            Type::U32 | Type::I32 => {
-                self.ctx.out.ops.push(Op::Push32(offset));
-            }
-            Type::U64 | Type::I64 => {
-                self.ctx.out.ops.push(Op::Push64(offset));
-            }
-            Type::Array { typ, .. } => {
-                self.gen_push(typ, offset);
+    fn gen_push(&mut self, typ: &Type, offset: IROffset) {
+        match offset {
+            IROffset::Local(off) => match typ {
+                Type::U8 | Type::I8 => {
+                    self.ctx.out.ops.push(Op::Push8(off));
+                }
+                Type::U16 | Type::I16 => {
+                    self.ctx.out.ops.push(Op::Push16(off));
+                }
+                Type::U32 | Type::I32 => {
+                    self.ctx.out.ops.push(Op::Push32(off));
+                }
+                Type::U64 | Type::I64 => {
+                    self.ctx.out.ops.push(Op::Push64(off));
+                }
+                Type::Array { typ, .. } => {
+                    self.gen_push(typ, offset);
+                }
+            },
+            IROffset::Extern(off) => {
+                self.ctx.out.ops.push(Op::Push64(off));
+                self.gen_push_ptr(typ);
             }
         }
     }
@@ -441,7 +468,7 @@ impl<'a> IRGen<'a> {
         None
     }
 
-    fn gen_str_init(&mut self, offset: u64, expr: &ParsedExpr) {
+    fn gen_str_init(&mut self, offset: IROffset, expr: &ParsedExpr) {
         self.gen_expr(expr);
         let str_idx = (self.ctx.out.strs.len() - 1) as u64;
 
@@ -450,25 +477,49 @@ impl<'a> IRGen<'a> {
             _ => panic!(),
         };
 
-        for i in 0..raw_string.len() {
+        // Goes 1 over length because of the null terminator (which isn't in rust)
+        for i in 0..raw_string.len() + 1 {
             self.ctx.out.ops.push(Op::PushPtr8);
-            self.ctx.out.ops.push(Op::Mov8(offset - (i as u64)));
+            match offset {
+                IROffset::Local(off) => self.ctx.out.ops.push(Op::Mov8(off - (i as u64))),
+                IROffset::Extern(off) => {
+                    self.ctx.out.ops.push(Op::Push64(off));
+                    self.ctx.out.ops.push(Op::Push(i as u64));
+                    self.ctx.out.ops.push(Op::Add);
+                    self.ctx.out.ops.push(Op::MovPtr8);
+                }
+            }
 
-            self.ctx.out.ops.push(Op::PushStr(str_idx));
-            self.ctx.out.ops.push(Op::Push(i as u64 + 1));
-            self.ctx.out.ops.push(Op::Add);
+            if i < raw_string.len() {
+                self.ctx.out.ops.push(Op::PushStr(str_idx));
+                self.ctx.out.ops.push(Op::Push(i as u64 + 1));
+                self.ctx.out.ops.push(Op::Add);
+            }
         }
-
-        self.ctx.out.ops.push(Op::PushPtr8);
-        self.ctx
-            .out
-            .ops
-            .push(Op::Mov8(offset - (raw_string.len() as u64)));
     }
 
     fn gen_stmt(&mut self, s: &ParsedStmt) {
         match &s.stmt {
-            Stmt::DerefAsgmt { ptr, expr } => {
+            Stmt::DerefVarDecl { typ, ident, ptr } => {
+                assert!(
+                    self.ctx.curr_fn.is_some(),
+                    "cannot perform variable decl outside of function"
+                );
+
+                self.ctx.get_curr_fn_mut().stack_size += Self::get_size(&Type::U64);
+                let offset = self.ctx.get_curr_fn().stack_size;
+
+                self.ctx.get_curr_frame().symbols.insert(
+                    ident.to_string(),
+                    IRSymbol {
+                        typ: typ.clone(),
+                        offset: IROffset::Extern(offset),
+                    },
+                );
+
+                self.gen_assign(&Type::U64, ptr, IROffset::Local(offset));
+            }
+            Stmt::DeprecatedDerefAsgmt { ptr, expr } => {
                 self.gen_expr(expr);
                 self.gen_expr(ptr);
                 println!("{:?}", expr);
@@ -506,7 +557,7 @@ impl<'a> IRGen<'a> {
                     ident.to_string(),
                     IRSymbol {
                         typ: typ.clone(),
-                        offset: offset,
+                        offset: IROffset::Local(offset),
                     },
                 );
             }
@@ -523,14 +574,14 @@ impl<'a> IRGen<'a> {
                     ident.to_string(),
                     IRSymbol {
                         typ: typ.clone(),
-                        offset: offset,
+                        offset: IROffset::Local(offset),
                     },
                 );
 
                 if (matches!(typ, Type::Array { .. }) && matches!(expr.expr, Expr::AnonString(_))) {
-                    self.gen_str_init(offset, expr);
+                    self.gen_str_init(IROffset::Local(offset), expr);
                 } else {
-                    self.gen_assign(&typ, expr, offset);
+                    self.gen_assign(&typ, expr, IROffset::Local(offset));
                 }
             }
             Stmt::VarAsgmt { ident, expr } => {
@@ -580,7 +631,10 @@ impl<'a> IRGen<'a> {
 
                 let offset = sym.offset;
                 let mut curr_typ = sym.typ.clone();
-                self.ctx.out.ops.push(Op::Lea(offset));
+                match offset {
+                    IROffset::Local(off) => self.ctx.out.ops.push(Op::Lea(off)),
+                    IROffset::Extern(off) => self.ctx.out.ops.push(Op::Push64(off)),
+                }
 
                 // Do ptr math on each of the indices sequentially
                 for _ in 0..subscripts.len() {
@@ -617,13 +671,13 @@ impl<'a> IRGen<'a> {
                         let offset = self.ctx.get_curr_fn_mut().stack_size;
 
                         self.ctx.out.ops.push(Op::PushArg(16 + (i as u64) * 8));
-                        self.gen_mov(&arg.typ, offset);
+                        self.gen_mov(&arg.typ, IROffset::Local(offset));
 
                         self.ctx.get_curr_frame().symbols.insert(
                             arg.ident.to_string(),
                             IRSymbol {
                                 typ: arg.typ.clone(),
-                                offset,
+                                offset: IROffset::Local(offset),
                             },
                         );
                     }
