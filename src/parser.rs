@@ -124,6 +124,10 @@ pub enum Stmt {
         ident: String,
         args: Vec<ParsedExpr>,
     },
+    Constant {
+        ident: String,
+        expr: ParsedExpr,
+    },
 }
 
 #[derive(Debug)]
@@ -1147,6 +1151,7 @@ impl<'a> Parser<'a> {
             Some(t) => {
                 if !matches!(&t.token, Token::Semicolon) {
                     Self::error("expected semicolon", &t.loc);
+                    panic!();
                 }
             }
             None => {
@@ -1155,6 +1160,58 @@ impl<'a> Parser<'a> {
             }
         }
         Stmt::BreakStatement
+    }
+
+    fn handle_const(&mut self) -> Stmt {
+        self.reader.next();
+
+        // Read in the identifier
+        let ident_token = match self.reader.next() {
+            Some(t) => match &t.token {
+                Token::Identifier(n) => n.clone(),
+                _ => {
+                    Self::error("expected identifier", &t.loc);
+                    panic!();
+                }
+            },
+            None => {
+                Self::error("expected identifier", &self.reader.eof);
+                panic!();
+            }
+        };
+
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::Equals) {
+                    Self::error("expected equals", &t.loc);
+                    panic!();
+                }
+            }
+            None => {
+                Self::error("expected equals", &self.reader.eof);
+                panic!();
+            }
+        }
+
+        let expr = self.handle_expression();
+
+        match self.reader.next() {
+            Some(t) => {
+                if !matches!(&t.token, Token::Semicolon) {
+                    Self::error("expected semicolon", &t.loc);
+                    panic!();
+                }
+            }
+            None => {
+                Self::error("expected semicolon", &self.reader.eof);
+                panic!();
+            }
+        }
+
+        Stmt::Constant {
+            ident: ident_token,
+            expr,
+        }
     }
 
     fn parse_stmt(&mut self) -> ParsedStmt {
@@ -1183,6 +1240,7 @@ impl<'a> Parser<'a> {
             Token::Return => self.handle_return(),
             Token::Import => self.handle_import(),
             Token::Break => self.handle_break(),
+            Token::Const => self.handle_const(),
             _ => {
                 Self::error("invalid start to statement", &token.loc);
                 panic!();

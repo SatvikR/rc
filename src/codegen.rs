@@ -104,13 +104,14 @@ impl IRFn {
     }
 }
 
-struct IRGenCtx {
+struct IRGenCtx<'a> {
     curr_fn: Option<IRFn>,
     out: IRProgram,
     label: usize,
+    constants: HashMap<String, &'a ParsedExpr>,
 }
 
-impl IRGenCtx {
+impl<'a> IRGenCtx<'a> {
     fn new() -> Self {
         Self {
             curr_fn: None,
@@ -119,6 +120,7 @@ impl IRGenCtx {
                 strs: Vec::new(),
             },
             label: 0,
+            constants: HashMap::new(),
         }
     }
 
@@ -142,11 +144,11 @@ impl IRGenCtx {
 
 // Generates IR from an AST
 struct IRGen<'a> {
-    ctx: &'a mut IRGenCtx,
+    ctx: &'a mut IRGenCtx<'a>,
 }
 
 impl<'a> IRGen<'a> {
-    fn new(ctx: &'a mut IRGenCtx) -> Self {
+    fn new(ctx: &'a mut IRGenCtx<'a>) -> Self {
         Self { ctx: ctx }
     }
 
@@ -192,6 +194,15 @@ impl<'a> IRGen<'a> {
         match &e.expr {
             Expr::IntLiteral(n) => self.ctx.out.ops.push(Op::Push(*n)),
             Expr::Identifier(ident) => {
+                // See if this identifier is a constant
+                let const_opt = self.ctx.constants.get(ident);
+                if const_opt.is_some() {
+                    // this is what's known as fighting the borrow checker
+                    let c = const_opt.unwrap().clone();
+                    self.gen_expr(c);
+                    return;
+                }
+
                 let symbol_opt = self.get_symbol(ident);
                 match symbol_opt {
                     None => {
@@ -492,8 +503,11 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn gen_stmt(&mut self, s: &ParsedStmt) {
+    fn gen_stmt(&mut self, s: &'a ParsedStmt) {
         match &s.stmt {
+            Stmt::Constant { ident, expr } => {
+                self.ctx.constants.insert(ident.clone(), expr);
+            }
             Stmt::BreakStatement => {
                 assert!(
                     self.ctx.get_curr_fn().break_frames.len() > 0,
@@ -770,13 +784,13 @@ impl<'a> IRGen<'a> {
         }
     }
 
-    fn gen_stmts(&mut self, stmts: &Vec<ParsedStmt>) {
+    fn gen_stmts(&mut self, stmts: &'a Vec<ParsedStmt>) {
         for s in stmts.iter() {
             self.gen_stmt(s);
         }
     }
 
-    fn gen_prog(&mut self, ast: &ProgramTree) -> &mut IRProgram {
+    fn gen_prog(&mut self, ast: &'a ProgramTree) -> &mut IRProgram {
         self.gen_stmts(&ast.stmts);
 
         &mut self.ctx.out

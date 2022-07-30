@@ -42,6 +42,7 @@ pub enum Token {
     Ampersand,
     Import,
     Arrow,
+    Const,
 }
 
 #[derive(Debug, Clone)]
@@ -448,6 +449,7 @@ impl<'a> Lexer<'a> {
             "return" => Some(Token::Return),
             "break" => Some(Token::Break),
             "import" => Some(Token::Import),
+            "const" => Some(Token::Const),
             _ => None,
         }
     }
