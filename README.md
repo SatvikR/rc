@@ -15,7 +15,7 @@ i32 main() {
 }
 ```
 
-> more examples in the example directory. Checkout the [sudoku solver example](https://github.com/SatvikR/rc/blob/main/examples/sudoku.rc) if you want to see a program that actually does something interesting
+> more examples in the example directory. Check out the [sudoku solver example](https://github.com/SatvikR/rc/blob/main/examples/sudoku.rc) if you want to see a program that actually does something interesting
 
 ## License
 
