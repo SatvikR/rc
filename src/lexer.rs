@@ -40,6 +40,7 @@ pub enum Token {
     LessThanOrEquals,
     GreaterThanOrEquals,
     Ampersand,
+    BitwiseOr,
     Import,
     Arrow,
     Const,
@@ -231,7 +232,7 @@ impl<'a> Lexer<'a> {
 
     fn is_operator(token: char) -> bool {
         match token {
-            '+' | '-' | '*' | '/' => true,
+            '+' | '-' | '*' | '/' | '<' | '>' | '=' | '!' | '&' | '|' => true,
             _ => false,
         }
     }
@@ -359,6 +360,7 @@ impl<'a> Lexer<'a> {
             ']' => Some(Token::CloseSquare),
             ',' => Some(Token::Comma),
             '&' => Some(Token::Ampersand),
+            '|' => Some(Token::BitwiseOr),
             _ => None,
         }
     }

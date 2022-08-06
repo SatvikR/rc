@@ -8,6 +8,15 @@ u64 write(i32 fd, ptr64 buf, u64 count) {
 	return SYSCALL_3(1, fd, buf, count);
 }
 
+/* Wraps the open syscall. */
+i32 open(ptr64 filename, i32 flags, u32 mode) {
+	return SYSCALL_3(2, filename, flags, mode);
+}
+
+i32 close(i32 fd) {
+	return SYSCALL_1(3, fd);
+}
+
 /* Counts the length of a string. */
 u64 strlen(ptr64 str) {
 	ptr64 p = str;
@@ -30,4 +39,20 @@ u64 puts(ptr64 str) {
 /* Writes a character to stdout */
 u64 putc(i8 char) {
 	return write(1, &char, 1);
+}
+
+const O_RDONLY = 0;
+const O_WRONLY = 1;
+const O_RDWR = 2;
+const O_CREAT = 64;
+const O_TRUNC = 512;
+const O_APPEND = 1024;
+const O_NONBLOCK = 2048;
+
+i32 fopen(ptr64 filename, i32 flags, u32 mode) {
+	return open(filename, flags, mode);
+}
+
+i32 fclose(i32 fd) {
+	return close(fd);
 }

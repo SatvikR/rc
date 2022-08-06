@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// High-level assembly instructions, a.k.a an intermediate representation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Op {
     DefFn(String),
     PrepFn(u64),
@@ -47,6 +47,8 @@ enum Op {
     EndFn,
     Add,
     Sub,
+    Or,
+    And,
     Mult,
     Div,
     Gt,
@@ -104,14 +106,14 @@ impl IRFn {
     }
 }
 
-struct IRGenCtx<'a> {
+struct IRGenCtx {
     curr_fn: Option<IRFn>,
     out: IRProgram,
     label: usize,
-    constants: HashMap<String, &'a ParsedExpr>,
+    constants: HashMap<String, Vec<Op>>,
 }
 
-impl<'a> IRGenCtx<'a> {
+impl IRGenCtx {
     fn new() -> Self {
         Self {
             curr_fn: None,
@@ -144,11 +146,11 @@ impl<'a> IRGenCtx<'a> {
 
 // Generates IR from an AST
 struct IRGen<'a> {
-    ctx: &'a mut IRGenCtx<'a>,
+    ctx: &'a mut IRGenCtx,
 }
 
 impl<'a> IRGen<'a> {
-    fn new(ctx: &'a mut IRGenCtx<'a>) -> Self {
+    fn new(ctx: &'a mut IRGenCtx) -> Self {
         Self { ctx: ctx }
     }
 
@@ -198,8 +200,10 @@ impl<'a> IRGen<'a> {
                 let const_opt = self.ctx.constants.get(ident);
                 if const_opt.is_some() {
                     // this is what's known as fighting the borrow checker
-                    let c = const_opt.unwrap().clone();
-                    self.gen_expr(c);
+                    let c = const_opt.unwrap();
+                    for op in c {
+                        self.ctx.out.ops.push(op.clone());
+                    }
                     return;
                 }
 
@@ -349,6 +353,8 @@ impl<'a> IRGen<'a> {
                     BinOperator::RelationalNotEquals => self.ctx.out.ops.push(Op::Neq),
                     BinOperator::LessThanOrEquals => self.ctx.out.ops.push(Op::Leq),
                     BinOperator::GreaterThanOrEquals => self.ctx.out.ops.push(Op::Geq),
+                    BinOperator::BitwiseAnd => self.ctx.out.ops.push(Op::And),
+                    BinOperator::BitwiseOr => self.ctx.out.ops.push(Op::Or),
                     _ => panic!(),
                 }
             }
@@ -506,7 +512,18 @@ impl<'a> IRGen<'a> {
     fn gen_stmt(&mut self, s: &'a ParsedStmt) {
         match &s.stmt {
             Stmt::Constant { ident, expr } => {
-                self.ctx.constants.insert(ident.clone(), expr);
+                let mut const_ops = Vec::new();
+
+                let mut ctx = IRGenCtx::new();
+                let mut ir_gen = IRGen::new(&mut ctx);
+
+                ir_gen.gen_expr(expr);
+
+                for op in ir_gen.ctx.out.ops.iter() {
+                    const_ops.push(op.clone());
+                }
+
+                self.ctx.constants.insert(ident.clone(), const_ops);
             }
             Stmt::BreakStatement => {
                 assert!(
@@ -556,6 +573,10 @@ impl<'a> IRGen<'a> {
                 let program = ir_gen.gen_prog(parsed_program);
 
                 self.ctx.out.ops.append(&mut program.ops);
+
+                for (ident, ops) in ctx.constants {
+                    self.ctx.constants.insert(ident.clone(), ops.clone());
+                }
             }
             Stmt::VarDef { typ, ident } => {
                 assert!(
@@ -1035,6 +1056,18 @@ pub fn generate_x86_64(ast: &ProgramTree, path: &str) -> std::io::Result<()> {
                 out.write_fmt(format_args!("    pop rcx\n"))?;
                 out.write_fmt(format_args!("    pop rax\n"))?;
                 out.write_fmt(format_args!("    sub rax, rcx\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::Or => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    or rax, rcx\n"))?;
+                out.write_fmt(format_args!("    push rax\n"))?;
+            }
+            Op::And => {
+                out.write_fmt(format_args!("    pop rcx\n"))?;
+                out.write_fmt(format_args!("    pop rax\n"))?;
+                out.write_fmt(format_args!("    and rax, rcx\n"))?;
                 out.write_fmt(format_args!("    push rax\n"))?;
             }
             Op::Mult => {
