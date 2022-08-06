@@ -2,7 +2,7 @@
 
 A C-like programming language implemented in Rust (for now)
 
-> Now with [an official Hello, World program!](https://github.com/SatvikR/rc/blob/main/examples/helloworld.rc)
+> Check out [the official Hello, World program!](https://github.com/SatvikR/rc/blob/main/examples/helloworld.rc)
 
 Compiles to x86-64 instruction set and uses linux syscalls. Expects both `nasm` and `ld` to be in `$PATH`.
 
@@ -15,7 +15,7 @@ i32 main() {
 }
 ```
 
-> more examples in the example directory. Checkout the [sudoku solver example](https://github.com/SatvikR/rc/blob/main/examples/sudoku.rc) if you want to see a program that actually does something interesting
+> more examples in the example directory. Check out the [sudoku solver example](https://github.com/SatvikR/rc/blob/main/examples/sudoku.rc) if you want to see a program that actually does something interesting
 
 ## License
 
