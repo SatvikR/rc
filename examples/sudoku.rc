@@ -1,0 +1,146 @@
+import "core.rc"
+
+i32 read_board(ptr64 p_board) {
+	i32[9][9] board => p_board;
+
+	i32 board_fd = fopen("examples/board.txt", O_RDONLY, 0);
+
+	i32 i = 0;
+	while (i < 9) {
+		fseek(board_fd, 10*i, SEEK_SET);
+
+		i8[9] line;
+		fread(board_fd, &line, 9);
+
+		i32 j = 0;
+		while (j < 9) {
+			board[i][j] = line[j] - '0';
+
+			j = j + 1;
+		}
+
+		i = i + 1;
+	}
+
+	fclose(board_fd);
+	return 0;
+}
+
+i32 print_board(ptr64 p_board) {
+	i32[9][9] board => p_board;
+
+	i32 i = 0;
+	while (i < 9) {
+		i32 j = 0;
+		while (j < 9) {
+			if (board[i][j] == 0) putc(' ');
+			else putc(board[i][j] + '0');
+
+			if (j == 2 || j == 5) putc('|');
+
+			j = j + 1;
+		}
+
+		putc('\n');
+		if (i == 2 || i == 5) {
+			puts("-----------\n");
+		}
+
+		i = i + 1;
+	}
+
+	return 0;
+}
+
+/* returns 0 if invlaid, 1 if valid */
+u8 check_valid(ptr64 p_board, i32 row, i32 col, i32 num) {
+	i32[9][9] board => p_board;
+
+	i32 i = 0;
+	while (i < 9) {
+		if (i != col) {
+			if (board[row][i] == num) return 0;
+		}
+
+		i = i + 1;
+	}
+
+	i32 i = 0;
+	while (i < 9) {
+		if (i != row) {
+			if (board[i][col] == num) return 0;
+		}
+
+		i = i + 1;
+	}
+
+	i32 box_corner_row = row / 3 * 3;
+	i32 box_corner_col = col / 3 * 3;
+
+	i32 i = box_corner_row;
+	while (i < box_corner_row + 3) {
+		i32 j = box_corner_col;
+		while (j < box_corner_col + 3) {
+			if (i != row && j != col) {
+				if (board[i][j] == num) return 0;
+			}
+
+			j = j + 1;
+		}
+
+		i = i + 1;
+	}
+
+	return 1;
+}
+
+u8 backtrack(ptr64 p_board, i32 row, i32 col) {
+	i32[9][9] board => p_board;
+
+	if (row > 8 || col > 8) {
+		return 1;
+	}
+
+	i32 next_row;
+	i32 next_col;
+
+	if (col == 8) {
+		next_row = row + 1;
+		next_col = 0;
+	} else {
+		next_row = row;
+		next_col = col + 1;
+	}
+
+	if (board[row][col] != 0) {
+		return backtrack(p_board, next_row, next_col);
+	} else {
+		i32 i = 1;
+		while (i < 10) {
+			if (check_valid(p_board, row, col, i)) {
+				board[row][col] = i;
+				if (backtrack(p_board, next_row, next_col)) {
+					return 1;
+				}
+			}
+
+			i = i + 1;
+		}
+
+		board[row][col] = 0;
+		return 0;
+	}
+}
+
+i32 main() {
+	i32[9][9] board;
+
+	read_board(&board);
+	print_board(&board);
+	backtrack(&board, 0, 0);
+	puts("\nSOLVED: \n\n");
+	print_board(&board);
+
+	return 0;
+}
+

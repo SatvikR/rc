@@ -8,25 +8,14 @@ Compiles to x86-64 instruction set and uses linux syscalls. Expects both `nasm` 
 
 ## Example
 
-> Calculates the 20th fibonacci number
-
 ```
-i32 fib(i32 n) {
-	if (n <= 1) return n;
-	return fib(n - 1) + fib(n - 2);
-}
-
 i32 main() {
-	i32 twentieth_fib = fib(20);
+	puts("Hello, World\n");
 	return 0;
 }
 ```
 
-The language is **extremeley** minimal right now.
-
-The only way to "output" anything right now is to use the syscall intrinsics as used in the hello world example.
-
-> more examples in the example directory
+> more examples in the example directory. Checkout the [sudoku solver example](https://github.com/SatvikR/rc/blob/main/examples/sudoku.rc) if you want to see a program that actually does something interesting
 
 ## License
 
