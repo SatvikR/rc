@@ -9,8 +9,10 @@ Compiles to x86-64 instruction set and uses linux syscalls. Expects both `nasm` 
 ## Example
 
 ```
+import "core.rc"
+
 i32 main() {
-	puts("Hello, World\n");
+	puts("Hello, World!\n");
 	return 0;
 }
 ```
